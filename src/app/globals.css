@@ -1,26 +1,149 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/*
+ * Life OS theme
+ *
+ * Palette is grounded — warm off-black "paper" background, ivory text, a
+ * single restrained gold accent, plus a sage for "hit" and a warm clay for
+ * "miss". Less gradient, less glass, more "personal operating system".
+ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-instrument), Georgia, serif;
+
+  /* surfaces */
+  --color-bg: #0a0908;
+  --color-surface: #14110f;
+  --color-surface-2: #1c1815;
+  --color-border: #2a2522;
+  --color-border-strong: #3a322d;
+
+  /* ink */
+  --color-ink-1: #f0ece6;   /* primary text */
+  --color-ink-2: #b3aca2;   /* secondary */
+  --color-ink-3: #6f685f;   /* tertiary / labels */
+
+  /* accents */
+  --color-accent: #c9a961;        /* gold */
+  --color-accent-strong: #d9b96b;
+  --color-success: #7aa98a;       /* sage */
+  --color-warn: #d97757;          /* warm clay */
+  --color-danger: #c5573b;
+  --color-info: #6b8aa8;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* expose tokens as raw vars too so we can reference them in arbitrary css */
+:root {
+  --bg: #0a0908;
+  --surface: #14110f;
+  --surface-2: #1c1815;
+  --border: #2a2522;
+  --border-strong: #3a322d;
+  --ink-1: #f0ece6;
+  --ink-2: #b3aca2;
+  --ink-3: #6f685f;
+  --accent: #c9a961;
+  --accent-strong: #d9b96b;
+  --success: #7aa98a;
+  --warn: #d97757;
+  --danger: #c5573b;
+  --info: #6b8aa8;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink-1);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+html {
+  color-scheme: dark;
+  font-size: 16px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* very subtle paper grain via radial spots — barely perceptible */
+  background-image:
+    radial-gradient(80rem 60rem at 80% -20%, rgba(201, 169, 97, 0.05), transparent 60%),
+    radial-gradient(60rem 40rem at -10% 110%, rgba(122, 169, 138, 0.03), transparent 60%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
+
+/* hide scrollbars on small mobile */
+@media (max-width: 640px) {
+  *::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+}
+
+body { -webkit-overflow-scrolling: touch; }
+
+/* prevent zoom on focus on iOS */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* serif display for big headings ("operating system" feel) */
+.serif {
+  font-family: var(--font-serif);
+  font-feature-settings: "liga", "dlig", "ss01";
+  letter-spacing: -0.01em;
+}
+
+/* OS-style label: tiny, uppercase, tracked */
+.os-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* divider that breathes */
+.os-rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* a quiet inset grid block, the building unit of Life OS */
+.os-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.os-block-strong {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+}
+
+/* shimmer for skeleton */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* safe-area helpers */
+.safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+.safe-top { padding-top: max(env(safe-area-inset-top), 0px); }
+
+/* status dots, Linear-style */
+.dot { display:inline-block; height: 6px; width: 6px; border-radius: 99px; }
+.dot-on { background: var(--success); box-shadow: 0 0 0 3px rgba(122,169,138,0.15); }
+.dot-warn { background: var(--warn); }
+.dot-off { background: var(--ink-3); }
