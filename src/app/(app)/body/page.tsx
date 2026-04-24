@@ -114,8 +114,8 @@ function AddEntry({ onSaved }: { onSaved: () => void }) {
         </div>
       )}
 
-      <Button size="sm" className="w-full" disabled={(!weight && !photo) || saving} onClick={save}>
-        {saving ? "Saving…" : "Log today"}
+      <Button size="sm" className="w-full" loading={saving} disabled={!weight && !photo} onClick={save}>
+        Log today
       </Button>
     </div>
   );

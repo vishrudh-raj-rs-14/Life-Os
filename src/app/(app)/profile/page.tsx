@@ -21,7 +21,7 @@ export default function ProfilePage() {
   useEffect(() => void load(), [load]);
 
   const goals = useLiveQuery(
-    () => db().goals.filter((g) => !g.archived && !g.deletedAt).toArray(),
+    () => db().habits.filter((g) => !g.archived && !g.deletedAt).toArray(),
     []
   );
   const sessions = useLiveQuery(
@@ -50,7 +50,17 @@ export default function ProfilePage() {
     }
   }, [user, goals, sessions, logs, unlocked]);
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div className="px-5 pt-6 pb-10 space-y-4">
+        <div className="skeleton h-9 w-20 rounded-xl" />
+        <div className="skeleton h-28 rounded-2xl" />
+        <div className="grid grid-cols-2 gap-2">
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-10 rounded-lg" />)}
+        </div>
+      </div>
+    );
+  }
   const { level, name: levelTitle, xpInLevel, xpForNext, progress } = levelFromXp(user.totalXp);
   const have = new Set((unlocked ?? []).map((a) => a.key));
 

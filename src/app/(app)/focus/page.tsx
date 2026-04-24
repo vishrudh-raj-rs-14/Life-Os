@@ -146,6 +146,17 @@ function FocusInner() {
     router.push("/");
   }
 
+  if (goals === undefined) {
+    return (
+      <div className="px-5 pt-6 pb-10 space-y-4">
+        <div className="skeleton h-9 w-32 rounded-xl" />
+        <div className="skeleton h-40 rounded-2xl" />
+        <div className="skeleton h-12 rounded-xl" />
+        <div className="skeleton h-12 rounded-xl" />
+      </div>
+    );
+  }
+
   return (
     <div className="px-5 pt-6 pb-10 space-y-6">
       <div className="flex items-baseline justify-between">

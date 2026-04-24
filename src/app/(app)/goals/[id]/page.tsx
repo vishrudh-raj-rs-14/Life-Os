@@ -219,10 +219,11 @@ function AddEntry({ habitId }: { habitId: string }) {
         <Button
           size="sm"
           className="ml-auto"
-          disabled={(!text.trim() && !blob) || saving}
+          loading={saving}
+          disabled={!text.trim() && !blob}
           onClick={save}
         >
-          {saving ? "Saving…" : "Add entry"}
+          Add entry
         </Button>
       </div>
     </div>
@@ -362,8 +363,8 @@ function EditPanel({
         </div>
       </div>
 
-      <Button size="sm" className="w-full" onClick={save} disabled={saving || !title.trim()}>
-        {saving ? "Saving…" : <><Check size={14} /> Save changes</>}
+      <Button size="sm" className="w-full" onClick={save} loading={saving} disabled={!title.trim()}>
+        <Check size={14} /> Save changes
       </Button>
     </div>
   );

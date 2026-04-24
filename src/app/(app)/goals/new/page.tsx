@@ -361,10 +361,11 @@ export default function NewGoalPage() {
       <Button
         size="lg"
         className="w-full"
-        disabled={!title.trim() || saving}
+        loading={saving}
+        disabled={!title.trim()}
         onClick={save}
       >
-        {saving ? "Saving…" : "Create goal"}
+        Create goal
       </Button>
     </div>
   );

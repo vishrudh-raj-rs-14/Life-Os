@@ -14,16 +14,20 @@ import { HeaderBar } from "@/components/today/HeaderBar";
 import { QuestCard } from "@/components/today/QuestCard";
 import { ActiveTimerCard } from "@/components/today/ActiveTimerCard";
 import { LevelUpOverlay } from "@/components/LevelUpOverlay";
+import { GoalsList } from "@/components/goals/GoalsList";
 import { habitDoneToday, isHabitDueToday, xpForHabit, levelName } from "@/lib/engine";
 import { LOCAL_USER_ID, nowMs, todayISO, vibrate } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 
+type Tab = "today" | "goals";
+
 export default function TodayPage() {
   const { user, awardXp, bumpStreak, load } = useUser();
   const timer = useTimer();
   const [today] = useState(todayISO());
+  const [tab, setTab] = useState<Tab>("today");
   const [levelUp, setLevelUp] = useState<{ level: number; name: string } | null>(null);
   // Optimistic done state: habitId → true while the DB write is in-flight
   const [optimisticDone, setOptimisticDone] = useState<Record<string, boolean>>({});
@@ -225,6 +229,31 @@ export default function TodayPage() {
     <div className="space-y-5">
       <HeaderBar user={user} />
 
+      {/* Tab switcher: Today / Goals */}
+      <div className="px-5">
+        <div className="flex gap-1 p-1 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]">
+          {(["today", "goals"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 h-8 rounded-lg text-xs font-mono uppercase tracking-wide transition-all ${
+                tab === t
+                  ? "bg-[var(--surface)] text-[var(--ink-1)] shadow-sm border border-[var(--border)]"
+                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)]"
+              }`}
+            >
+              {t === "today" ? "Today" : "All Goals"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "goals" ? (
+        <div className="px-5 pb-6">
+          <GoalsList />
+        </div>
+      ) : (
+
       {timer.goalId && timer.startedAt && activeGoal && (
         <div className="px-5">
           <ActiveTimerCard goal={activeGoal} startedAt={timer.startedAt} />
@@ -319,6 +348,7 @@ export default function TodayPage() {
           </motion.div>
         )}
       </section>
+      )}  {/* end tab === "goals" ? ... : ( */}
 
     </div>
     </>
