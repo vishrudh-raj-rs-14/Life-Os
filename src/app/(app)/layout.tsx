@@ -52,7 +52,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto w-full max-w-md min-h-[100dvh] flex flex-col safe-top">
       <AppBoot />
-      <main className="flex-1 pb-32 overflow-hidden">
+      {/* overflow-x-clip keeps page-transition slides from causing horizontal scroll
+          without blocking the vertical overscroll needed for pull-to-refresh */}
+      <main className="flex-1 pb-32 overflow-x-clip">
         <AnimatePresence mode="wait" initial={false}>
           <PageTransition key={pathname}>
             {children}

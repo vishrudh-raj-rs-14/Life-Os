@@ -57,7 +57,7 @@ body {
   color: var(--ink-1);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: none;
+  /* allow pull-to-refresh on mobile — do NOT set overscroll-behavior-y: none here */
 }
 
 html {
