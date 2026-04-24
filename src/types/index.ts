@@ -162,6 +162,10 @@ export interface UserProfile {
   onboardedAt?: number;
   createdAt: number;
   updatedAt: number;
+  /** yyyy-MM-dd — day for which `dailyBonusXp` was last applied (reversible until midnight) */
+  dailyBonusDate?: string;
+  /** XP slice included in totalXp as the "daily bar maxed" bonus for dailyBonusDate */
+  dailyBonusXp?: number;
 }
 
 export interface Achievement {

@@ -53,6 +53,42 @@ export function levelFromXp(totalXp: number): {
 
 // XP awarded for completing (or partially completing) a habit log.
 // `value` is interpreted in the habit's unit (count/duration/binary/checklist).
+/** Max XP achievable today from one habit when fully satisfied (drives daily bar cap). */
+export function maxDailyXpForHabit(habit: Habit): number {
+  switch (habit.kind) {
+    case "binary":
+      return xpForHabit(habit, 1);
+    case "count":
+    case "duration":
+    case "checklist":
+      return xpForHabit(habit, Math.max(1, habit.target ?? 1));
+    default:
+      return xpForHabit(habit, 1);
+  }
+}
+
+/** Sum of log XP today that counts toward the daily bar (only habits due today). */
+export function dailyXpEarnedFromLogs(
+  logs: Log[],
+  today: string,
+  dueHabitIds: Set<string>
+): number {
+  return logs
+    .filter(
+      (l) =>
+        l.date === today &&
+        dueHabitIds.has(l.habitId) &&
+        !l.deletedAt
+    )
+    .reduce((a, l) => a + (l.xpAwarded ?? 0), 0);
+}
+
+/** Bonus XP granted when today's due-habit XP bar hits 100% (scaled, capped). */
+export function dailyBarBonusAmount(dailyCap: number): number {
+  if (dailyCap <= 0) return 0;
+  return Math.min(50, Math.max(10, Math.round(dailyCap * 0.12)));
+}
+
 export function xpForHabit(habit: Habit, value: number = 1): number {
   const diffMul: Record<number, number> = { 1: 5, 2: 10, 3: 18, 4: 28, 5: 40 };
   // Fallback so missing / out-of-range difficulty never produces NaN

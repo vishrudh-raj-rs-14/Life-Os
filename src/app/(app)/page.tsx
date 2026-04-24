@@ -15,7 +15,14 @@ import { QuestCard } from "@/components/today/QuestCard";
 import { ActiveTimerCard } from "@/components/today/ActiveTimerCard";
 import { LevelUpOverlay } from "@/components/LevelUpOverlay";
 import { GoalsList } from "@/components/goals/GoalsList";
-import { habitDoneToday, isHabitDueToday, xpForHabit, levelName } from "@/lib/engine";
+import {
+  dailyXpEarnedFromLogs,
+  habitDoneToday,
+  isHabitDueToday,
+  levelName,
+  maxDailyXpForHabit,
+  xpForHabit,
+} from "@/lib/engine";
 import { LOCAL_USER_ID, nowMs, todayISO, vibrate } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
@@ -24,7 +31,7 @@ import { SkeletonCard } from "@/components/ui/Skeleton";
 type Tab = "today" | "goals";
 
 export default function TodayPage() {
-  const { user, awardXp, bumpStreak, load } = useUser();
+  const { user, awardXp, bumpStreak, load, syncDailyXpBonus } = useUser();
   const timer = useTimer();
   const [today] = useState(todayISO());
   const [tab, setTab] = useState<Tab>("today");
@@ -82,6 +89,36 @@ export default function TodayPage() {
   }, []);
 
   const dismissLevelUp = useCallback(() => setLevelUp(null), []);
+
+  const dailyCap = useMemo(
+    () => dueHabits.reduce((a, h) => a + maxDailyXpForHabit(h), 0),
+    [dueHabits]
+  );
+  const dailyEarned = useMemo(() => {
+    const ids = new Set(dueHabits.map((h) => h.id));
+    return dailyXpEarnedFromLogs(todayLogs ?? [], today, ids);
+  }, [dueHabits, todayLogs, today]);
+
+  useEffect(() => {
+    if (!user || todayLogs === undefined) return;
+    void syncDailyXpBonus(today, dueHabits, todayLogs).then((res) => {
+      if (res.leveledUp) {
+        setLevelUp({ level: res.newLevel, name: levelName(res.newLevel) });
+      } else if (res.delta > 0 && res.desiredBonus > 0) {
+        toast({
+          emoji: "✦",
+          title: `+${res.delta} daily bonus XP`,
+          description: "You maxed today's goal XP bar. It is removed if you drop below 100%.",
+        });
+      } else if (res.delta < 0) {
+        toast({
+          emoji: "↩",
+          title: "Daily bonus withdrawn",
+          description: "XP dropped below today's bar — bonus was removed to prevent gaming.",
+        });
+      }
+    });
+  }, [user, today, dueHabits, todayLogs, syncDailyXpBonus]);
 
   // Show skeleton while user profile or habits are loading
   if (!user || habits === undefined) {
@@ -227,7 +264,14 @@ export default function TodayPage() {
       />
     )}
     <div className="space-y-5">
-      <HeaderBar user={user} />
+      <HeaderBar
+        user={user}
+        dailyEarned={dailyEarned}
+        dailyCap={dailyCap}
+        dailyBonusActive={
+          user.dailyBonusDate === today && (user.dailyBonusXp ?? 0) > 0
+        }
+      />
 
       {/* Tab switcher: Today / Goals */}
       <div className="px-5">
