@@ -38,10 +38,14 @@ function getNotifPlatform(): "ok" | "ios-safari-standalone" | "ios-browser" | "u
 
 function NotificationSetup({
   perm,
+  subscribed,
   onAsk,
+  onDisable,
 }: {
   perm: NotificationPermission;
+  subscribed: boolean;
   onAsk: () => void;
+  onDisable: () => void;
 }) {
   const platform = getNotifPlatform();
 
@@ -99,29 +103,35 @@ function NotificationSetup({
           <p>Notifications are <span className="text-[var(--danger)]">blocked</span> in your browser settings.</p>
           <p className="text-[var(--ink-3)]">Go to your browser Site Settings and allow notifications for this site, then come back.</p>
         </div>
+      ) : subscribed ? (
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="secondary" size="sm" className="text-[var(--success)]">
+            <CheckCircle2 size={14} /> Notifications on
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              if ("serviceWorker" in navigator) {
+                const reg = await navigator.serviceWorker.ready;
+                await reg.showNotification("Life OS — notifications working ✓", {
+                  body: "You'll get daily nudges to keep your streak alive.",
+                  icon: "/icon.svg",
+                  tag: "test",
+                });
+              }
+            }}
+          >
+            <Bell size={13} /> Test
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onDisable} className="text-[var(--danger)]">
+            Disable
+          </Button>
+        </div>
       ) : (
         <Button onClick={onAsk} variant="secondary" size="sm">
-          {perm === "granted" ? <CheckCircle2 size={14} /> : <Bell size={14} />}
-          {perm === "granted" ? "Notifications on" : "Enable notifications"}
-        </Button>
-      )}
-
-      {perm === "granted" && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={async () => {
-            if ("serviceWorker" in navigator) {
-              const reg = await navigator.serviceWorker.ready;
-              await reg.showNotification("Life OS — notifications working ✓", {
-                body: "You'll get daily nudges to keep your streak alive.",
-                icon: "/icon.svg",
-                tag: "test",
-              });
-            }
-          }}
-        >
-          <Bell size={13} /> Send test notification
+          <Bell size={14} />
+          Enable notifications
         </Button>
       )}
     </div>
@@ -130,13 +140,20 @@ function NotificationSetup({
 
 export default function SettingsPage() {
   const { user, setUser, load } = useUser();
-  const [perm, setPerm] = useState<NotificationPermission>("default");
+  const [perm, setPerm]           = useState<NotificationPermission>("default");
+  const [subscribed, setSubscribed] = useState(false);
   const [cloudUser, setCloudUser] = useState<string | null>(null);
 
   useEffect(() => {
     void load();
     if (typeof window !== "undefined" && "Notification" in window) {
       void Promise.resolve().then(() => setPerm(Notification.permission));
+    }
+    // Check if already subscribed in the browser's push manager
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      void navigator.serviceWorker.ready.then(reg =>
+        reg.pushManager.getSubscription().then(sub => setSubscribed(!!sub))
+      );
     }
     // check Google session via new Supabase browser client
     void import("@/lib/supabase/client").then(({ supabaseBrowser }) => {
@@ -160,9 +177,9 @@ export default function SettingsPage() {
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!vapidKey) return;
       const reg = await navigator.serviceWorker.ready;
-      // Always get-or-create the subscription and (re-)send it to Supabase.
-      // The browser may already have a subscription from before the table
-      // existed — we need to upsert it so it gets stored.
+      // Get or create — then always upsert to Supabase.
+      // The browser may already hold a subscription from before our Supabase
+      // table existed; we need to send it again.
       let sub = await reg.pushManager.getSubscription();
       if (!sub) {
         sub = await reg.pushManager.subscribe({
@@ -173,13 +190,30 @@ export default function SettingsPage() {
           ),
         });
       }
-      // Always upsert — idempotent on the server side
-      await fetch("/api/push/subscribe", {
+      const res = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sub),
       });
-    } catch { /* noop — push not available */ }
+      if (res.ok) setSubscribed(true);
+    } catch { /* push not available on this browser/OS */ }
+  }
+
+  async function disable() {
+    if (!("serviceWorker" in navigator)) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/push/unsubscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setSubscribed(false);
+    } catch { /* noop */ }
   }
 
   async function setTone(t: Tone) {
@@ -222,7 +256,7 @@ export default function SettingsPage() {
 
       {/* ── Notifications ─────────────────────────────────────────────── */}
       <Section icon={<Bell size={14} />} title="Notifications">
-        <NotificationSetup perm={perm} onAsk={ask} />
+        <NotificationSetup perm={perm} subscribed={subscribed} onAsk={ask} onDisable={disable} />
 
         <div className="mt-4">
           <Label>Notification tone</Label>
