@@ -51,6 +51,14 @@ export default function TodayPage() {
     return habits.filter((h) => isHabitDueToday(h));
   }, [habits]);
 
+  // Alt-day habits on their off-day — show as optional / bonus
+  const optionalHabits = useMemo(() => {
+    if (!habits) return [];
+    return habits.filter(
+      (h) => h.cadence === "alt-days" && !isHabitDueToday(h)
+    );
+  }, [habits]);
+
   // --- pre-compute recent strips per habit ---------------------------------
   const last14 = useMemo(() => {
     const days: string[] = [];
@@ -203,7 +211,7 @@ export default function TodayPage() {
           }
         />
 
-        {dueHabits.length === 0 ? (
+        {dueHabits.length === 0 && optionalHabits.length === 0 ? (
           <EmptyToday />
         ) : (
           <div className="space-y-2">
@@ -230,6 +238,41 @@ export default function TodayPage() {
                 />
               );
             })}
+
+            {/* Alt-day habits on their off day — bonus / optional */}
+            {optionalHabits.length > 0 && (
+              <>
+                {dueHabits.length > 0 && (
+                  <div className="pt-1 pb-0.5">
+                    <span className="os-label">bonus today</span>
+                  </div>
+                )}
+                {optionalHabits.map((h) => {
+                  const { done, value, progress } = habitDoneToday(
+                    h,
+                    todayLogs ?? [],
+                    today
+                  );
+                  const todayLog = (todayLogs ?? []).find((l) => l.habitId === h.id);
+                  return (
+                    <QuestCard
+                      key={h.id}
+                      habit={h}
+                      optional
+                      value={value}
+                      done={done}
+                      progress={progress}
+                      xp={xpForHabit(h, h.target)}
+                      todayStepsMask={todayLog?.steps}
+                      recent={stripFor(h)}
+                      onLog={(delta) => void logQuantity(h, delta)}
+                      onToggleBinary={() => void toggleBinary(h)}
+                      onToggleStep={(i) => void toggleStep(h, i)}
+                    />
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
       </section>

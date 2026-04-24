@@ -54,7 +54,7 @@ export function levelFromXp(totalXp: number): {
 // XP awarded for completing (or partially completing) a habit log.
 // `value` is interpreted in the habit's unit (count/duration/binary/checklist).
 export function xpForHabit(habit: Habit, value: number = 1): number {
-  const diffMul: Record<Difficulty, number> = { 1: 8, 2: 14, 3: 22 };
+  const diffMul: Record<Difficulty, number> = { 1: 5, 2: 10, 3: 18, 4: 28, 5: 40 };
   const target = Math.max(1, habit.target ?? 1);
   let progress = 0;
   switch (habit.kind) {

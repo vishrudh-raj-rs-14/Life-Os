@@ -238,13 +238,15 @@ function EditPanel({
   habit: Habit;
   onClose: () => void;
 }) {
-  const [title, setTitle]     = useState(habit.title);
-  const [target, setTarget]   = useState(habit.target ?? 1);
-  const [unit, setUnit]       = useState(habit.unit ?? "");
-  const [cue, setCue]         = useState(habit.cue ?? "");
-  const [time, setTime]       = useState(habit.scheduledTime ?? "");
-  const [color, setColor]     = useState(habit.color ?? "#C9A96E");
-  const [saving, setSaving]   = useState(false);
+  const [title,        setTitle]        = useState(habit.title);
+  const [target,       setTarget]       = useState(habit.target ?? 1);
+  const [unit,         setUnit]         = useState(habit.unit ?? "");
+  const [cue,          setCue]          = useState(habit.cue ?? "");
+  const [time,         setTime]         = useState(habit.scheduledTime ?? "");
+  const [color,        setColor]        = useState(habit.color ?? "#C9A96E");
+  const [weeklyTarget, setWeeklyTarget] = useState(habit.weeklyTarget ?? 7);
+  const [difficulty,   setDifficulty]   = useState<import("@/types").Difficulty>(habit.difficulty ?? 2);
+  const [saving,       setSaving]       = useState(false);
 
   const COLORS = [
     "#C9A96E", "#D97757", "#7AA98A", "#6E9BC9", "#A96EC9",
@@ -261,6 +263,8 @@ function EditPanel({
       cue: cue || undefined,
       scheduledTime: time || undefined,
       color,
+      weeklyTarget,
+      difficulty,
       updatedAt: Date.now(),
     });
     // update reminder time if set
@@ -326,9 +330,36 @@ function EditPanel({
           placeholder="e.g. after morning coffee" />
       </div>
 
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Reminder time</Label>
+          <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
+        </div>
+        <div>
+          <Label>Weekly target (days)</Label>
+          <Input type="number" min={1} max={7} value={weeklyTarget}
+            onChange={e => setWeeklyTarget(Math.min(7, Math.max(1, Number(e.target.value))))} />
+        </div>
+      </div>
+
       <div>
-        <Label>Reminder time</Label>
-        <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
+        <Label>Difficulty</Label>
+        <div className="flex gap-1">
+          {([1, 2, 3, 4, 5] as import("@/types").Difficulty[]).map(d => (
+            <button key={d} onClick={() => setDifficulty(d)}
+              className={cn(
+                "flex-1 h-9 rounded-md border text-xs font-mono transition",
+                difficulty === d
+                  ? "border-[var(--accent)]/60 bg-[var(--accent)]/[0.08] text-[var(--accent)]"
+                  : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink-3)]"
+              )}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-between mt-0.5 text-[10px] font-mono text-[var(--ink-3)]">
+          <span>easy</span><span>brutal</span>
+        </div>
       </div>
 
       <Button size="sm" className="w-full" onClick={save} disabled={saving || !title.trim()}>
@@ -450,25 +481,26 @@ export default function GoalDetailPage() {
           </div>
 
           {/* weekly target bar */}
-          {weekDue > 0 && (
-            <div className="mt-4">
-              <div className="flex justify-between text-[11px] os-label mb-1.5">
-                <span>Weekly completion</span>
-                <span className="font-mono text-[var(--ink-2)] tracking-normal normal-case">
-                  {weekDone} / {weekDue} sessions
-                </span>
+          {(() => {
+            const wTarget = habit.weeklyTarget ?? weekDue;
+            const wPct = wTarget > 0 ? weekDone / wTarget : 0;
+            return wTarget > 0 ? (
+              <div className="mt-4">
+                <div className="flex justify-between text-[11px] os-label mb-1.5">
+                  <span>Weekly completion</span>
+                  <span className="font-mono text-[var(--ink-2)] tracking-normal normal-case">
+                    {weekDone} / {wTarget} days
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden">
+                  <div
+                    className="h-full transition-all"
+                    style={{ width: `${Math.min(1, wPct) * 100}%`, background: color }}
+                  />
+                </div>
               </div>
-              <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden">
-                <div
-                  className="h-full transition-all"
-                  style={{
-                    width: `${weekDue > 0 ? (weekDone / weekDue) * 100 : 0}%`,
-                    background: color,
-                  }}
-                />
-              </div>
-            </div>
-          )}
+            ) : null;
+          })()}
         </div>
       </div>
 
@@ -526,14 +558,16 @@ export default function GoalDetailPage() {
         </div>
       </div>
 
-      {/* focus CTA */}
-      <div className="px-5">
-        <Link href={`/focus?goalId=${habit.id}`}>
-          <Button size="lg" className="w-full">
-            <Play size={16} /> Start focus session
-          </Button>
-        </Link>
-      </div>
+      {/* focus CTA — only for timed habits */}
+      {(habit.kind === "duration" || habit.kind === "count") && (
+        <div className="px-5">
+          <Link href={`/focus?goalId=${habit.id}`}>
+            <Button size="lg" className="w-full">
+              <Play size={16} /> Start focus session
+            </Button>
+          </Link>
+        </div>
+      )}
 
       {/* journal */}
       <div className="px-5 space-y-3">

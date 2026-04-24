@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
-import { seedStarter } from "@/lib/seed";
+import { seedStarter, seedVishrudh } from "@/lib/seed";
 import { useUser } from "@/store/useUser";
 import { cn } from "@/lib/utils";
 import type { Tone } from "@/types";
@@ -53,13 +53,18 @@ export default function OnboardingPage() {
     if (!name.trim() || !handle.trim()) return;
     setSubmitting(true);
     try {
+      const h = handle.trim().toLowerCase();
       await seedStarter({
         className: "polymath",
-        handle: handle.trim().toLowerCase(),
+        handle: h,
         displayName: name.trim(),
         tone,
-        selectedGoalKeys: [], // start clean — goals added via pipeline
+        selectedGoalKeys: [],
       });
+      // Seed personal goals for vishrudh
+      if (h === "vishrudh") {
+        await seedVishrudh();
+      }
       await useUser.getState().load();
       router.replace("/");
     } catch (err) {

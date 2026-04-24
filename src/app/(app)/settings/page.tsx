@@ -11,6 +11,7 @@ import {
   Download,
   LogIn,
   LogOut,
+  RotateCcw,
   ShieldCheck,
 } from "lucide-react";
 import { useUser } from "@/store/useUser";
@@ -51,6 +52,14 @@ export default function SettingsPage() {
 
   async function setTone(t: Tone) {
     await setUser({ ...user!, tone: t, updatedAt: Date.now() });
+  }
+
+  async function resetAllData() {
+    if (!confirm("Delete EVERYTHING and restart from scratch? This cannot be undone.")) return;
+    // destroy the entire IndexedDB — Dexie recreates it fresh on next open
+    const db = (await import("@/lib/db/dexie")).db();
+    await db.delete();
+    window.location.href = "/onboarding";
   }
 
   async function exportData() {
@@ -255,9 +264,19 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...`}</pre>
 
       {/* ── Data export ───────────────────────────────────────────────── */}
       <Section icon={<Download size={14} />} title="Data">
-        <Button onClick={exportData} variant="secondary" size="sm">
-          Export JSON backup
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button onClick={exportData} variant="secondary" size="sm">
+            Export JSON backup
+          </Button>
+          <Button
+            onClick={resetAllData}
+            variant="ghost"
+            size="sm"
+            className="text-[var(--danger)] border-[var(--danger)]/30 hover:bg-[var(--danger)]/10"
+          >
+            <RotateCcw size={13} /> Reset all data
+          </Button>
+        </div>
       </Section>
     </div>
   );

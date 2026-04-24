@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import type { ClassName, Goal, Habit, Tracker, UserProfile } from "@/types";
 import { LOCAL_USER_ID } from "@/lib/utils";
 import { getRepo } from "@/lib/repo";
+import { db } from "@/lib/db/dexie";
 
 interface SeedOpts {
   className: ClassName;
@@ -308,5 +309,168 @@ export async function seedStarter(opts: SeedOpts) {
         updatedAt: t,
       });
     }
+  }
+}
+
+// ─── Vishrudh's personal starter goals ───────────────────────────────────────
+// Seeds directly into the habits table (flat model — habit IS the goal).
+
+export async function seedVishrudh() {
+  const t = Date.now();
+
+  const habits: Omit<Habit, "id">[] = [
+    {
+      userId: LOCAL_USER_ID,
+      title: "Indoor workout",
+      kind: "binary",
+      target: 1,
+      targetMode: "at-least",
+      cadence: "daily",
+      area: "health",
+      color: "#7AA98A",
+      difficulty: 3,
+      weeklyTarget: 7,
+      cue: "Evening after work",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      userId: LOCAL_USER_ID,
+      title: "Outdoor workout",
+      kind: "binary",
+      target: 1,
+      targetMode: "at-least",
+      cadence: "daily",
+      area: "health",
+      color: "#6E9BC9",
+      difficulty: 3,
+      weeklyTarget: 7,
+      cue: "Morning",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      userId: LOCAL_USER_ID,
+      title: "Daily routine",
+      kind: "checklist",
+      target: 4,
+      targetMode: "at-least",
+      cadence: "daily",
+      area: "health",
+      color: "#C9C96E",
+      difficulty: 1,
+      weeklyTarget: 7,
+      steps: ["Brush teeth (morning)", "Brush teeth (night)", "Skincare", "Hair care"],
+      cue: "After waking up",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      userId: LOCAL_USER_ID,
+      title: "Read tech book",
+      kind: "duration",
+      target: 60,
+      unit: "min",
+      targetMode: "at-least",
+      cadence: "daily",
+      area: "mind",
+      color: "#A96EC9",
+      difficulty: 2,
+      weeklyTarget: 7,
+      cue: "Before lunch or after dinner",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      userId: LOCAL_USER_ID,
+      title: "Self-dev book — 10 pages",
+      kind: "count",
+      target: 10,
+      unit: "pages",
+      targetMode: "at-least",
+      cadence: "daily",
+      area: "mind",
+      color: "#C96E9B",
+      difficulty: 2,
+      weeklyTarget: 7,
+      cue: "Before bed",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      userId: LOCAL_USER_ID,
+      title: "Engineering blogs",
+      kind: "binary",
+      target: 1,
+      targetMode: "at-least",
+      cadence: "alt-days",
+      area: "mind",
+      color: "#9BC96E",
+      difficulty: 2,
+      weeklyTarget: 4,
+      cue: "Morning coffee",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      userId: LOCAL_USER_ID,
+      title: "LeetCode / CP — 2 problems",
+      kind: "count",
+      target: 2,
+      unit: "problems",
+      targetMode: "at-least",
+      cadence: "alt-days",
+      area: "craft",
+      color: "#D97757",
+      difficulty: 4,
+      weeklyTarget: 4,
+      cue: "After morning routine",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      userId: LOCAL_USER_ID,
+      title: "Deep work — side project",
+      kind: "duration",
+      target: 120,
+      unit: "min",
+      targetMode: "at-least",
+      cadence: "daily",
+      area: "craft",
+      color: "#C9A96E",
+      difficulty: 4,
+      weeklyTarget: 7,
+      cue: "Night block after dinner",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      userId: LOCAL_USER_ID,
+      title: "Wake up early",
+      kind: "binary",
+      target: 1,
+      targetMode: "at-least",
+      cadence: "daily",
+      area: "lifestyle",
+      color: "#6EC9C9",
+      difficulty: 3,
+      weeklyTarget: 7,
+      cue: "6 AM alarm",
+      archived: 0,
+      createdAt: t,
+      updatedAt: t,
+    },
+  ];
+
+  for (const h of habits) {
+    await db().habits.add({ id: nanoid(), ...h });
   }
 }

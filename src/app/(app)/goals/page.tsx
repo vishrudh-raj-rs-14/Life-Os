@@ -109,9 +109,12 @@ export default function GoalsPage() {
         <div key={area} className="space-y-1.5">
           <div className="os-label">{AREA_LABELS[area] ?? area}</div>
           {areaRows.map(({ habit, stats, todayStatus, dueToday }) => {
-            const pct =
-              stats.due > 0 ? Math.min(1, stats.done / stats.due) : 0;
-            const color = habit.color ?? "var(--accent)";
+              const color = habit.color ?? "var(--accent)";
+
+            // weeklyTarget overrides cadence-derived due count for display
+            const displayTarget = habit.weeklyTarget ?? stats.due;
+            const displayPct = displayTarget > 0
+              ? Math.min(1, stats.done / displayTarget) : 0;
 
             return (
               <Link href={`/goals/${habit.id}`} key={habit.id} className="block">
@@ -159,16 +162,16 @@ export default function GoalsPage() {
                   </div>
 
                   {/* weekly progress bar */}
-                  {stats.due > 0 && (
+                  {displayTarget > 0 && (
                     <div className="mt-2.5 flex items-center gap-2">
                       <div className="flex-1 h-1 rounded-full bg-[var(--surface-2)] overflow-hidden">
                         <div
                           className="h-full transition-all"
-                          style={{ width: `${pct * 100}%`, background: color }}
+                          style={{ width: `${displayPct * 100}%`, background: color }}
                         />
                       </div>
                       <span className="text-[10px] font-mono text-[var(--ink-3)] tabular-nums">
-                        {stats.done}/{stats.due} this wk
+                        {stats.done}/{displayTarget} this wk
                       </span>
                     </div>
                   )}

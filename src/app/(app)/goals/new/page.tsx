@@ -57,15 +57,24 @@ export default function NewGoalPage() {
   const [customDays, setCustomDays] = useState<number[]>([1, 3, 5]);
   const [cue,        setCue]        = useState("");
   const [time,       setTime]       = useState("");
-  const [difficulty, setDifficulty] = useState<Difficulty>(2);
+  const [difficulty, setDifficulty]   = useState<Difficulty>(2);
+  const [weeklyTarget, setWeeklyTarget] = useState<number>(7);
   const [saving,     setSaving]     = useState(false);
 
   function pickKind(k: HabitKind) {
     setKind(k);
-    if (k === "binary") { setTarget(1); setUnit(""); }
-    if (k === "count")  { setTarget(10); setUnit("reps"); }
-    if (k === "duration") { setTarget(30); setUnit("min"); }
-    if (k === "checklist") { setTarget(2); setUnit(""); }
+    if (k === "binary")    { setTarget(1);  setUnit(""); }
+    if (k === "count")     { setTarget(10); setUnit("reps"); }
+    if (k === "duration")  { setTarget(30); setUnit("min"); }
+    if (k === "checklist") { setTarget(2);  setUnit(""); }
+  }
+
+  function pickCadence(c: Cadence) {
+    setCadence(c);
+    // auto-set sensible weeklyTarget when cadence changes
+    if (c === "daily")    setWeeklyTarget(7);
+    if (c === "alt-days") setWeeklyTarget(4);
+    if (c === "weekly")   setWeeklyTarget(1);
   }
 
   function toggleDay(d: number) {
@@ -97,6 +106,8 @@ export default function NewGoalPage() {
       cue: cue || undefined,
       scheduledTime: time || undefined,
       difficulty,
+      weeklyTarget,
+      area,
       archived: 0,
       createdAt: t,
       updatedAt: t,
@@ -272,7 +283,7 @@ export default function NewGoalPage() {
         <Label>Cadence</Label>
         <div className="grid grid-cols-4 gap-2">
           {CADENCES.map(c => (
-            <button key={c.value} onClick={() => setCadence(c.value)}
+            <button key={c.value} onClick={() => pickCadence(c.value)}
               className={cn(
                 "h-10 rounded-md border text-xs font-mono",
                 cadence === c.value
@@ -317,20 +328,32 @@ export default function NewGoalPage() {
           <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
         </div>
         <div>
-          <Label>Difficulty</Label>
-          <div className="flex gap-1.5">
-            {([1, 2, 3] as Difficulty[]).map(d => (
-              <button key={d} onClick={() => setDifficulty(d)}
-                className={cn(
-                  "flex-1 h-11 rounded-md border text-sm font-mono",
-                  difficulty === d
-                    ? "border-[var(--accent)]/60 bg-[var(--accent)]/[0.08] text-[var(--accent)]"
-                    : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink-3)]"
-                )}>
-                {"●".repeat(d)}
-              </button>
-            ))}
-          </div>
+          <Label>Weekly target (days)</Label>
+          <Input
+            type="number" min={1} max={7}
+            value={weeklyTarget}
+            onChange={e => setWeeklyTarget(Math.min(7, Math.max(1, Number(e.target.value))))}
+          />
+        </div>
+      </div>
+
+      <div>
+        <Label>Difficulty</Label>
+        <div className="flex gap-1.5">
+          {([1, 2, 3, 4, 5] as Difficulty[]).map(d => (
+            <button key={d} onClick={() => setDifficulty(d)}
+              className={cn(
+                "flex-1 h-11 rounded-md border text-xs font-mono",
+                difficulty === d
+                  ? "border-[var(--accent)]/60 bg-[var(--accent)]/[0.08] text-[var(--accent)]"
+                  : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink-3)]"
+              )}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-between mt-1 text-[10px] font-mono text-[var(--ink-3)]">
+          <span>easy</span><span>brutal</span>
         </div>
       </div>
 

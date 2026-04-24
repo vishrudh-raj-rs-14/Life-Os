@@ -13,7 +13,7 @@ export type Tone = "coach" | "drill-sergeant" | "wise";
 
 export type Cadence = "daily" | "alt-days" | "weekly" | "custom";
 
-export type Difficulty = 1 | 2 | 3;
+export type Difficulty = 1 | 2 | 3 | 4 | 5;
 
 // What the habit measures. Each kind has its own logging UI + chart.
 //   binary    — done / not done
@@ -76,6 +76,8 @@ export interface Habit {
   cue?: string;
   scheduledTime?: string; // "HH:mm"
   difficulty: Difficulty;
+  weeklyTarget?: number; // desired completions per week (overrides cadence-derived count in displays)
+  area?: LifeArea;       // life area for grouping
   archived: 0 | 1;
   createdAt: number;
   updatedAt: number;

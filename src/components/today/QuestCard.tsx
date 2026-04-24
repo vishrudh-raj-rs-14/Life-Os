@@ -12,6 +12,7 @@ interface Props {
   done: boolean;
   progress: number;
   xp: number;
+  optional?: boolean;       // alt-day habit on an off day — shown but not forced
   todayStepsMask?: number[]; // for checklist
   recent: Array<{ date: string; value: number; target: number }>;
   onLog: (delta: number) => void; // +N or -N (count/duration)
@@ -21,6 +22,7 @@ interface Props {
 
 export function QuestCard({
   habit,
+  optional,
   value,
   done,
   progress,
@@ -36,9 +38,11 @@ export function QuestCard({
       layout
       className={cn(
         "relative flex flex-col gap-2 rounded-2xl border p-3 transition",
-        done
-          ? "border-[var(--accent)]/40 bg-[var(--accent)]/[0.06]"
-          : "border-[var(--border)] bg-[var(--surface)]"
+        optional && !done
+          ? "border-[var(--border)] bg-[var(--surface)] opacity-60"
+          : done
+            ? "border-[var(--accent)]/40 bg-[var(--accent)]/[0.06]"
+            : "border-[var(--border)] bg-[var(--surface)]"
       )}
     >
       {/* header row */}
@@ -60,6 +64,11 @@ export function QuestCard({
             >
               {habit.title}
             </h4>
+            {optional && !done && (
+              <span className="text-[9px] font-mono uppercase tracking-widest text-[var(--ink-3)] border border-[var(--border)] rounded px-1 py-0.5 shrink-0">
+                bonus
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-[var(--ink-3)] mt-0.5 uppercase tracking-wide">
             {habit.scheduledTime && <span>{habit.scheduledTime}</span>}
