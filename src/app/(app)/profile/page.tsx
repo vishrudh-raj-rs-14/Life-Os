@@ -33,7 +33,8 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user || !goals || !sessions || !logs || !unlocked) return;
-    const newOnes = evaluateBadges({ user, goals, sessions, logs }, unlocked);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const newOnes = evaluateBadges({ user, goals: goals as any, sessions, logs }, unlocked);
     if (newOnes.length) {
       void Promise.all(
         newOnes.map((b) =>
