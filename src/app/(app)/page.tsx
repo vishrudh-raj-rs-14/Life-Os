@@ -18,12 +18,15 @@ import { habitDoneToday, isHabitDueToday, xpForHabit, levelName } from "@/lib/en
 import { LOCAL_USER_ID, nowMs, todayISO, vibrate } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
+import { SkeletonCard } from "@/components/ui/Skeleton";
 
 export default function TodayPage() {
   const { user, awardXp, bumpStreak, load } = useUser();
   const timer = useTimer();
   const [today] = useState(todayISO());
   const [levelUp, setLevelUp] = useState<{ level: number; name: string } | null>(null);
+  // Optimistic done state: habitId → true while the DB write is in-flight
+  const [optimisticDone, setOptimisticDone] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     timer.hydrate();
@@ -76,7 +79,15 @@ export default function TodayPage() {
 
   const dismissLevelUp = useCallback(() => setLevelUp(null), []);
 
-  if (!user) return null;
+  // Show skeleton while user profile or habits are loading
+  if (!user || habits === undefined) {
+    return (
+      <div className="px-5 pt-6 pb-10 space-y-3">
+        <div className="skeleton h-14 rounded-2xl mb-5" />
+        {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
+      </div>
+    );
+  }
 
   const completedCount = dueHabits.filter((h) => {
     const { done } = habitDoneToday(h, todayLogs ?? [], today);
@@ -129,6 +140,10 @@ export default function TodayPage() {
 
   async function toggleBinary(h: Habit) {
     const { done } = habitDoneToday(h, todayLogs ?? [], today);
+
+    // Optimistic UI — flip immediately so button feels instant
+    setOptimisticDone(prev => ({ ...prev, [h.id]: !done }));
+
     if (done) {
       const todays = (todayLogs ?? []).filter((l) => l.habitId === h.id);
       for (const l of todays) {
@@ -136,6 +151,7 @@ export default function TodayPage() {
         if (l.xpAwarded) await awardXp(-l.xpAwarded);
       }
       vibrate(10);
+      setOptimisticDone(prev => { const n = { ...prev }; delete n[h.id]; return n; });
       return;
     }
     const xp = xpForHabit(h, 1);
@@ -144,6 +160,7 @@ export default function TodayPage() {
     const r = await awardXp(xp);
     await bumpStreak();
     vibrate([20, 30, 40]);
+    setOptimisticDone(prev => { const n = { ...prev }; delete n[h.id]; return n; });
     if (r.leveledUp) {
       setLevelUp({ level: r.newLevel, name: levelName(r.newLevel) });
     } else {
@@ -247,7 +264,7 @@ export default function TodayPage() {
                   <QuestCard
                     habit={h}
                     value={value}
-                    done={done}
+                    done={h.id in optimisticDone ? optimisticDone[h.id] : done}
                     progress={progress}
                     xp={xpForHabit(h, h.target)}
                     todayStepsMask={todayLog?.steps}
@@ -285,7 +302,7 @@ export default function TodayPage() {
                         habit={h}
                         optional
                         value={value}
-                        done={done}
+                        done={h.id in optimisticDone ? optimisticDone[h.id] : done}
                         progress={progress}
                         xp={xpForHabit(h, h.target)}
                         todayStepsMask={todayLog?.steps}

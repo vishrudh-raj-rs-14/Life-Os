@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import type { Cadence } from "@/types";
+import { SkeletonPage } from "@/components/ui/Skeleton";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Plus, ChevronRight } from "lucide-react";
 import { addDays, startOfWeek } from "date-fns";
@@ -86,6 +87,8 @@ export default function GoalsPage() {
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [rows]);
+
+  if (habits === undefined || logs === undefined) return <SkeletonPage cards={5} />;
 
   return (
     <div className="px-5 pt-6 pb-10 space-y-6">

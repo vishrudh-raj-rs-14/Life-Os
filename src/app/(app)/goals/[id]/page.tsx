@@ -422,7 +422,15 @@ export default function GoalDetailPage() {
     router.replace("/goals");
   }
 
-  if (!habit) return <div className="p-6 os-label">Loading…</div>;
+  if (!habit) return (
+    <div className="px-5 pt-6 pb-10 space-y-4">
+      <div className="skeleton h-8 w-40 rounded-lg" />
+      <div className="skeleton h-4 w-24 rounded" />
+      <div className="skeleton h-28 rounded-2xl" />
+      <div className="skeleton h-14 rounded-2xl" />
+      <div className="skeleton h-44 rounded-2xl" />
+    </div>
+  );
 
   return (
     <div className="pt-6 pb-10 space-y-6">

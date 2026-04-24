@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import { addDays, addWeeks, startOfWeek } from "date-fns";
 import { TrendingUp, TrendingDown, Minus, ArrowLeft } from "lucide-react";
+import { SkeletonPage } from "@/components/ui/Skeleton";
 import { db } from "@/lib/db/dexie";
 import { habitDoneToday, isHabitDueToday } from "@/lib/engine";
 import { cn } from "@/lib/utils";
@@ -124,6 +125,8 @@ export default function StatsPage() {
     return weekScore(habits, logs, prevWeek);
   }, [habits, logs, prevWeek]);
   const overallDelta = overallThis - overallLast;
+
+  if (habits === undefined || logs === undefined) return <SkeletonPage cards={6} />;
 
   return (
     <div className="px-5 pt-6 pb-10 space-y-7">

@@ -13,7 +13,7 @@ import { BADGES, evaluateBadges } from "@/lib/engine/badges";
 import { levelFromXp } from "@/lib/engine";
 import { nanoid } from "nanoid";
 import { LOCAL_USER_ID, cn } from "@/lib/utils";
-import { CalendarCheck2, Settings, Share2, Users } from "lucide-react";
+import { Activity, CalendarCheck2, Settings, Share2, Users } from "lucide-react";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -94,15 +94,20 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Link href="/review">
           <Button variant="secondary" className="w-full">
             <CalendarCheck2 size={14} /> Review
           </Button>
         </Link>
-        <Link href={`/u/${user.handle}`}>
+        <Link href="/body">
           <Button variant="secondary" className="w-full">
-            <Share2 size={14} /> Public
+            <Activity size={14} /> Body
+          </Button>
+        </Link>
+        <Link href="/stats">
+          <Button variant="secondary" className="w-full">
+            <Share2 size={14} /> Stats
           </Button>
         </Link>
         <Link href="/friends">

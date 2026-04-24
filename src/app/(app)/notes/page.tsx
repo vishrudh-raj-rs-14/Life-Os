@@ -468,7 +468,14 @@ export default function NotesPage() {
     return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
   }, [notes]);
 
-  if (!user) return null;
+  if (!user || notes === undefined) return (
+    <div className="px-5 pt-6 pb-10 space-y-4">
+      <div className="skeleton h-10 w-40 rounded-lg" />
+      <div className="skeleton h-32 rounded-2xl" />
+      <div className="skeleton h-20 rounded-2xl" />
+      <div className="skeleton h-20 rounded-2xl" />
+    </div>
+  );
 
   return (
     <div className="px-5 pt-6 pb-10 space-y-6 max-w-md mx-auto">

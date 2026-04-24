@@ -169,6 +169,17 @@ function PhotoThumb({ log, onDelete }: { log: BodyLog; onDelete: () => void }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+function BodySkeleton() {
+  return (
+    <div className="px-5 pt-6 pb-10 space-y-4">
+      <div className="skeleton h-8 w-24 rounded-lg" />
+      <div className="skeleton h-28 rounded-2xl" />
+      <div className="skeleton h-20 rounded-2xl" />
+      <div className="skeleton h-48 rounded-2xl" />
+    </div>
+  );
+}
+
 export default function BodyPage() {
   const [refresh, setRefresh] = useState(0);
 
@@ -212,6 +223,8 @@ export default function BodyPage() {
   async function deleteLog(id: string) {
     await db().bodyLogs.delete(id);
   }
+
+  if (logs === undefined) return <BodySkeleton />;
 
   return (
     <div className="px-5 pt-6 pb-10 space-y-6">
