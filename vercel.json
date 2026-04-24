@@ -4,12 +4,24 @@
   "outputDirectory": ".next",
   "crons": [
     {
-      "path": "/api/push/send",
-      "schedule": "0 8 * * *"
+      "path": "/api/push/send?type=daymiss&secret=lifeos-cron-2026",
+      "schedule": "35 2 * * *"
     },
     {
-      "path": "/api/push/send",
-      "schedule": "0 20 * * *"
+      "path": "/api/push/send?type=morning&secret=lifeos-cron-2026",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/push/send?type=midday&secret=lifeos-cron-2026",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/push/send?type=streak&secret=lifeos-cron-2026",
+      "schedule": "30 14 * * *"
+    },
+    {
+      "path": "/api/push/send?type=recap&secret=lifeos-cron-2026",
+      "schedule": "0 16 * * *"
     }
   ]
 }
