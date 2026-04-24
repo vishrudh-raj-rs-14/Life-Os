@@ -79,8 +79,15 @@ export default function OnboardingPage() {
         tone,
         selectedGoalKeys: [],
       });
-      // Seed personal goals for vishrudh
-      if (h === "vishrudh") {
+      // Seed personal goals when the handle is "vishrudh" OR the Google
+      // account is vishrudh.shrinivas@gmail.com
+      const sb = supabaseBrowser();
+      let googleEmail = "";
+      if (sb) {
+        const { data } = await sb.auth.getUser();
+        googleEmail = data.user?.email ?? "";
+      }
+      if (h === "vishrudh" || googleEmail === "vishrudh.shrinivas@gmail.com") {
         await seedVishrudh();
       }
       await useUser.getState().load();
