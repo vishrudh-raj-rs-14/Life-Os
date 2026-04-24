@@ -253,7 +253,7 @@ export default function TodayPage() {
           <GoalsList />
         </div>
       ) : (
-
+      <>
       {timer.goalId && timer.startedAt && activeGoal && (
         <div className="px-5">
           <ActiveTimerCard goal={activeGoal} startedAt={timer.startedAt} />
@@ -348,6 +348,7 @@ export default function TodayPage() {
           </motion.div>
         )}
       </section>
+      </>
       )}  {/* end tab === "goals" ? ... : ( */}
 
     </div>
