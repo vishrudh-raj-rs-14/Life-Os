@@ -31,11 +31,11 @@ export async function POST(req: NextRequest) {
       if (!res.ok) {
         const err = await res.text();
         console.error("Supabase upsert error:", err);
-        // Still return OK so the client registers successfully
+        return NextResponse.json({ ok: false, error: "Supabase error", detail: err }, { status: 500 });
       }
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, stored: !!(supabaseUrl && supabaseKey) });
   } catch (err) {
     console.error("Push subscribe error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
