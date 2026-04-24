@@ -16,18 +16,15 @@ import {
 } from "lucide-react";
 import { useUser } from "@/store/useUser";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, Select } from "@/components/ui/Input";
+import { Label, Select } from "@/components/ui/Input";
 import { ensurePermission } from "@/lib/notifications/scheduler";
 import { getRepo } from "@/lib/repo";
-import { hasSupabase, supabase } from "@/lib/social/supabase";
 import { STREAK_THRESHOLD } from "@/lib/engine";
 import type { Tone } from "@/types";
 
 export default function SettingsPage() {
   const { user, setUser, load } = useUser();
   const [perm, setPerm] = useState<NotificationPermission>("default");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authStep, setAuthStep] = useState<"idle" | "sent" | "checking">("idle");
   const [cloudUser, setCloudUser] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,12 +32,16 @@ export default function SettingsPage() {
     if (typeof window !== "undefined" && "Notification" in window) {
       void Promise.resolve().then(() => setPerm(Notification.permission));
     }
-    // check if already signed in to Supabase
-    if (hasSupabase()) {
-      void supabase()!
-        .auth.getUser()
-        .then(({ data }) => setCloudUser(data.user?.email ?? null));
-    }
+    // check Google session via new Supabase browser client
+    void import("@/lib/supabase/client").then(({ supabaseBrowser }) => {
+      const sb = supabaseBrowser();
+      if (sb) {
+        sb.auth.getUser().then(({ data }: { data: { user: { email?: string; user_metadata?: Record<string, string> } | null } }) => {
+          const u = data.user;
+          setCloudUser(u?.email ?? u?.user_metadata?.email ?? null);
+        });
+      }
+    });
   }, [load]);
 
   if (!user) return null;
@@ -97,29 +98,6 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function sendMagicLink() {
-    const sb = supabase();
-    if (!sb || !authEmail.trim()) return;
-    setAuthStep("checking");
-    const { error } = await sb.auth.signInWithOtp({
-      email: authEmail.trim(),
-      options: { emailRedirectTo: window.location.origin },
-    });
-    if (error) {
-      alert(error.message);
-      setAuthStep("idle");
-    } else {
-      setAuthStep("sent");
-    }
-  }
-
-  async function signOut() {
-    const sb = supabase();
-    if (!sb) return;
-    await sb.auth.signOut();
-    setCloudUser(null);
-  }
-
   return (
     <div className="px-5 pt-6 pb-10 space-y-6">
       <div className="flex items-center gap-2">
@@ -153,6 +131,26 @@ export default function SettingsPage() {
           {perm === "granted" ? "Notifications on" : "Enable notifications"}
         </Button>
 
+        {perm === "granted" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              // Fire an immediate local notification to confirm it's working
+              if ("serviceWorker" in navigator) {
+                const reg = await navigator.serviceWorker.ready;
+                await reg.showNotification("Life OS — push working ✓", {
+                  body: "If you see this, browser notifications are working.",
+                  icon: "/icon.svg",
+                  tag: "test",
+                });
+              }
+            }}
+          >
+            <Bell size={13} /> Test local notification
+          </Button>
+        )}
+
         <div className="mt-4">
           <Label>Notification tone</Label>
           <Select value={user.tone} onChange={(e) => setTone(e.target.value as Tone)}>
@@ -185,72 +183,32 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* ── Cloud sync ────────────────────────────────────────────────── */}
-      <Section icon={<Cloud size={14} />} title="Cloud sync">
-        {!hasSupabase() ? (
-          <div className="space-y-3">
-            <p className="text-sm text-[var(--ink-2)] leading-relaxed">
-              Cloud sync is <span className="text-[var(--warn)]">not configured</span>.
-              Add your Supabase keys to enable cross-device sync, accounts, and social.
-            </p>
-            <div className="os-block p-3 space-y-2 text-[12px] font-mono">
-              <div className="os-label mb-1">setup steps</div>
-              <div className="text-[var(--ink-2)] space-y-1.5">
-                <div>01 · go to <span className="text-[var(--accent)]">supabase.com</span> → New project</div>
-                <div>02 · Settings → API → copy URL + anon key</div>
-                <div>03 · create <span className="text-[var(--accent)]">.env.local</span> in project root:</div>
-              </div>
-              <pre className="text-[11px] text-[var(--ink-3)] mt-1 overflow-x-auto">{`NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...`}</pre>
-              <div className="text-[var(--ink-2)] space-y-1.5">
-                <div>04 · run the SQL in <span className="text-[var(--accent)]">supabase/migrations/001_init.sql</span> via Supabase SQL editor</div>
-                <div>05 · restart dev server: <span className="text-[var(--accent)]">npm run dev</span></div>
-              </div>
-            </div>
-          </div>
-        ) : cloudUser ? (
+      {/* ── Account ───────────────────────────────────────────────────── */}
+      <Section icon={<Cloud size={14} />} title="Account">
+        {cloudUser ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm text-[var(--success)]">
               <CheckCircle2 size={14} />
-              <span>Signed in as <span className="font-mono">{cloudUser}</span></span>
+              <span>Google account: <span className="font-mono">{cloudUser}</span></span>
             </div>
             <p className="text-xs text-[var(--ink-3)] font-mono">
               data syncs automatically when online.
             </p>
-            <Button variant="secondary" size="sm" onClick={signOut}>
+            <Button variant="secondary" size="sm" onClick={async () => {
+              const { supabaseBrowser } = await import("@/lib/supabase/client");
+              const sb = supabaseBrowser();
+              if (sb) await sb.auth.signOut();
+              window.location.href = "/login";
+            }}>
               <LogOut size={14} /> Sign out
             </Button>
           </div>
         ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-[var(--ink-2)]">
-              Sign in with a magic link — no password needed.
-            </p>
-            {authStep === "sent" ? (
-              <div className="os-block p-3 text-sm text-[var(--success)]">
-                ✓ Check your email for the magic link.
-              </div>
-            ) : (
-              <>
-                <div>
-                  <Label>Email</Label>
-                  <Input
-                    type="email"
-                    placeholder="you@example.com"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  onClick={sendMagicLink}
-                  disabled={authStep === "checking" || !authEmail.trim()}
-                >
-                  <LogIn size={14} />
-                  {authStep === "checking" ? "Sending…" : "Send magic link"}
-                </Button>
-              </>
-            )}
+          <div className="space-y-2">
+            <p className="text-sm text-[var(--ink-2)]">Not signed in with Google.</p>
+            <Button size="sm" onClick={() => { window.location.href = "/login"; }}>
+              <LogIn size={14} /> Sign in with Google
+            </Button>
           </div>
         )}
       </Section>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { seedStarter, seedVishrudh } from "@/lib/seed";
 import { useUser } from "@/store/useUser";
+import { supabaseBrowser } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Tone } from "@/types";
 
@@ -48,6 +49,23 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (user) router.replace("/");
   }, [user, router]);
+
+  // Pre-fill name/handle from Google profile if available
+  useEffect(() => {
+    const sb = supabaseBrowser();
+    if (!sb) return;
+    sb.auth.getUser().then(({ data }: { data: { user: { user_metadata?: Record<string, string> } | null } }) => {
+      if (!data.user) return;
+      const fullName = data.user.user_metadata?.full_name as string | undefined;
+      if (fullName && !name) setName(fullName);
+      if (!handle) {
+        const suggested = (data.user.user_metadata?.name as string | undefined)
+          ?.toLowerCase().replace(/\s+/g, "") ?? "";
+        if (suggested) setHandle(suggested);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function finish() {
     if (!name.trim() || !handle.trim()) return;
