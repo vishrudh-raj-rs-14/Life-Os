@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/nav/BottomNav";
 import { AppBoot } from "@/components/AppBoot";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { PageTransition } from "@/components/transitions/PageTransition";
+import { PullToRefresh } from "@/components/PullToRefresh";
 import { useUser } from "@/store/useUser";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
@@ -55,6 +56,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // InstallPrompt are fixed-positioned so they sit outside normal flow.
     // Page transitions are y-axis only so no horizontal overflow to clip.
     <div className="mx-auto w-full max-w-md safe-top">
+      <PullToRefresh />
       <AppBoot />
       <main className="pb-32">
         <AnimatePresence mode="wait" initial={false}>
