@@ -54,28 +54,34 @@ export function levelFromXp(totalXp: number): {
 // XP awarded for completing (or partially completing) a habit log.
 // `value` is interpreted in the habit's unit (count/duration/binary/checklist).
 export function xpForHabit(habit: Habit, value: number = 1): number {
-  const diffMul: Record<Difficulty, number> = { 1: 5, 2: 10, 3: 18, 4: 28, 5: 40 };
+  const diffMul: Record<number, number> = { 1: 5, 2: 10, 3: 18, 4: 28, 5: 40 };
+  // Fallback so missing / out-of-range difficulty never produces NaN
+  const mul    = diffMul[habit.difficulty] ?? 10;
   const target = Math.max(1, habit.target ?? 1);
+  const val    = isFinite(value) ? value : 0;
+
   let progress = 0;
   switch (habit.kind) {
     case "binary":
-      progress = value > 0 ? 1 : 0;
+      progress = val > 0 ? 1 : 0;
       break;
     case "count":
     case "checklist":
-      progress = Math.min(1, value / target);
+      progress = Math.min(1, val / target);
       break;
     case "duration":
       // duration is in minutes; reward proportional to target completion,
       // with a small bonus for going over.
-      progress = Math.min(1.25, value / target);
+      progress = Math.min(1.25, val / target);
       break;
+    default:
+      progress = val > 0 ? 1 : 0;
   }
   // For at-most habits (e.g. screen time), invert: reward staying under.
   if (habit.targetMode === "at-most") {
-    progress = value <= target ? 1 : Math.max(0, 1 - (value - target) / target);
+    progress = val <= target ? 1 : Math.max(0, 1 - (val - target) / target);
   }
-  return Math.round(diffMul[habit.difficulty] * progress);
+  return Math.round(mul * progress);
 }
 
 // XP awarded for a focus session (per minute)

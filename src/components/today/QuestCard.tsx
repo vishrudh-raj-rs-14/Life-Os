@@ -83,7 +83,7 @@ export function QuestCard({
           )}
           title="XP at full completion"
         >
-          <Zap size={10} />+{xp}
+          <Zap size={10} />+{isFinite(xp) ? xp : "?"}
         </div>
       </div>
 
