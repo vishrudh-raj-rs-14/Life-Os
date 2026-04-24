@@ -50,11 +50,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (loading && !user) return null; // brief flicker guard
 
   return (
-    <div className="mx-auto w-full max-w-md min-h-[100dvh] flex flex-col safe-top">
+    // No height-locking wrapper — the body is the scroll container so the
+    // OS pull-to-refresh gesture can fire when the user drags from the top.
+    // BottomNav and InstallPrompt use position:fixed so they don't need flex containment.
+    <div className="mx-auto w-full max-w-md safe-top overflow-x-clip">
       <AppBoot />
-      {/* overflow-x-clip keeps page-transition slides from causing horizontal scroll
-          without blocking the vertical overscroll needed for pull-to-refresh */}
-      <main className="flex-1 pb-32 overflow-x-clip">
+      <main className="pb-32">
         <AnimatePresence mode="wait" initial={false}>
           <PageTransition key={pathname}>
             {children}

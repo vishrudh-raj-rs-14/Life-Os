@@ -52,9 +52,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} h-full antialiased dark`}
+      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} antialiased dark`}
     >
-      <body className="min-h-full flex flex-col">
+      <body>
         {children}
         <ToastViewport />
       </body>
