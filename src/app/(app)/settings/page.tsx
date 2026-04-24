@@ -174,7 +174,7 @@ export default function SettingsPage() {
     setPerm(p);
     if (p !== "granted" || !("serviceWorker" in navigator)) return;
     try {
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      const vapidKey = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
       if (!vapidKey) return;
       const reg = await navigator.serviceWorker.ready;
       // Get or create — then always upsert to Supabase.

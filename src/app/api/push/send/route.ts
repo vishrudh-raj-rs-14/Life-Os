@@ -12,9 +12,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const publicKey  = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
-    const privateKey = process.env.VAPID_PRIVATE_KEY ?? "";
-    const email      = process.env.VAPID_EMAIL ?? "mailto:admin@lifeos.app";
+    // .trim() removes any accidental whitespace/newlines from env var storage
+    const publicKey  = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
+    const privateKey = (process.env.VAPID_PRIVATE_KEY ?? "").trim();
+    const email      = (process.env.VAPID_EMAIL ?? "mailto:admin@lifeos.app").trim();
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     // Prefer service-role key (bypasses RLS) — falls back to anon key in dev
     const supabaseKey =
