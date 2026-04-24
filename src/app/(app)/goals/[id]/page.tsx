@@ -587,8 +587,8 @@ export default function GoalDetailPage() {
         </div>
       </div>
 
-      {/* focus CTA — only for timed habits */}
-      {(habit.kind === "duration" || habit.kind === "count") && (
+      {/* focus CTA — duration goals only (Pomodoro credits time); count/binary use steppers */}
+      {habit.kind === "duration" && (
         <div className="px-5">
           <Link href={`/focus?goalId=${habit.id}`}>
             <Button size="lg" className="w-full">
