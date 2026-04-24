@@ -22,6 +22,112 @@ import { getRepo } from "@/lib/repo";
 import { STREAK_THRESHOLD } from "@/lib/engine";
 import type { Tone } from "@/types";
 
+// ─── Platform detection helpers ──────────────────────────────────────────────
+
+function getNotifPlatform(): "ok" | "ios-safari-standalone" | "ios-browser" | "unsupported" {
+  if (typeof window === "undefined") return "ok";
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (!isIOS) return "ok";
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
+  // iOS 16.4+ Safari supports push only in standalone (home screen) mode
+  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  if (isStandalone && isSafari) return "ios-safari-standalone"; // ✅ supported
+  return "ios-browser"; // Chrome / Firefox / in-browser Safari → unsupported
+}
+
+function NotificationSetup({
+  perm,
+  onAsk,
+}: {
+  perm: NotificationPermission;
+  onAsk: () => void;
+}) {
+  const platform = getNotifPlatform();
+
+  // iOS Chrome / Firefox / browser tab → explain what to do
+  if (platform === "ios-browser") {
+    return (
+      <div className="space-y-3">
+        <div className="os-block p-3 space-y-2 text-[12px] text-[var(--ink-2)]">
+          <div className="flex items-center gap-2 text-[var(--warn)] font-mono text-[11px]">
+            <Bell size={12} /> Notifications require Safari + Home Screen on iOS
+          </div>
+          <p className="text-[11px] text-[var(--ink-3)] leading-relaxed">
+            Chrome, Firefox, and other browsers on iPhone cannot show web notifications — Apple requires Safari.
+          </p>
+          <div className="space-y-1.5 mt-2">
+            <div className="font-mono text-[10px] text-[var(--accent)] uppercase tracking-widest">Steps to enable</div>
+            {[
+              "Open this site in Safari (not Chrome)",
+              "Tap the Share button ↗ at the bottom",
+              `Tap "Add to Home Screen"`,
+              "Open the app from your home screen",
+              "Go to Settings → Enable notifications",
+            ].map((s, i) => (
+              <div key={i} className="flex gap-2">
+                <span className="font-mono text-[var(--accent)] shrink-0">{String(i + 1).padStart(2, "0")}</span>
+                <span>{s}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // iOS Safari standalone — supported, show normal flow
+  // All other platforms (Android, desktop) — show normal flow
+  return (
+    <div className="space-y-2">
+      <div className="os-label mb-1">
+        status ·{" "}
+        <span className={
+          perm === "granted" ? "text-[var(--success)]"
+          : perm === "denied" ? "text-[var(--danger)]"
+          : "text-[var(--warn)]"
+        }>
+          {perm}
+        </span>
+        {platform === "ios-safari-standalone" && (
+          <span className="ml-2 text-[var(--success)]">· iOS PWA ✓</span>
+        )}
+      </div>
+
+      {perm === "denied" ? (
+        <div className="os-block p-3 text-[12px] text-[var(--ink-2)] space-y-1">
+          <p>Notifications are <span className="text-[var(--danger)]">blocked</span> in your browser settings.</p>
+          <p className="text-[var(--ink-3)]">Go to your browser Site Settings and allow notifications for this site, then come back.</p>
+        </div>
+      ) : (
+        <Button onClick={onAsk} variant="secondary" size="sm">
+          {perm === "granted" ? <CheckCircle2 size={14} /> : <Bell size={14} />}
+          {perm === "granted" ? "Notifications on" : "Enable notifications"}
+        </Button>
+      )}
+
+      {perm === "granted" && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={async () => {
+            if ("serviceWorker" in navigator) {
+              const reg = await navigator.serviceWorker.ready;
+              await reg.showNotification("Life OS — notifications working ✓", {
+                body: "You'll get daily nudges to keep your streak alive.",
+                icon: "/icon.svg",
+                tag: "test",
+              });
+            }
+          }}
+        >
+          <Bell size={13} /> Send test notification
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user, setUser, load } = useUser();
   const [perm, setPerm] = useState<NotificationPermission>("default");
@@ -112,44 +218,7 @@ export default function SettingsPage() {
 
       {/* ── Notifications ─────────────────────────────────────────────── */}
       <Section icon={<Bell size={14} />} title="Notifications">
-        <div className="os-label mb-2">
-          status ·{" "}
-          <span
-            className={
-              perm === "granted"
-                ? "text-[var(--success)]"
-                : perm === "denied"
-                  ? "text-[var(--danger)]"
-                  : "text-[var(--warn)]"
-            }
-          >
-            {perm}
-          </span>
-        </div>
-        <Button onClick={ask} variant="secondary" size="sm">
-          {perm === "granted" ? <CheckCircle2 size={14} /> : <Bell size={14} />}
-          {perm === "granted" ? "Notifications on" : "Enable notifications"}
-        </Button>
-
-        {perm === "granted" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={async () => {
-              // Fire an immediate local notification to confirm it's working
-              if ("serviceWorker" in navigator) {
-                const reg = await navigator.serviceWorker.ready;
-                await reg.showNotification("Life OS — push working ✓", {
-                  body: "If you see this, browser notifications are working.",
-                  icon: "/icon.svg",
-                  tag: "test",
-                });
-              }
-            }}
-          >
-            <Bell size={13} /> Test local notification
-          </Button>
-        )}
+        <NotificationSetup perm={perm} onAsk={ask} />
 
         <div className="mt-4">
           <Label>Notification tone</Label>
