@@ -30,6 +30,7 @@ import { addDays, addWeeks, format, parseISO, startOfWeek } from "date-fns";
 import { db } from "@/lib/db/dexie";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Textarea } from "@/components/ui/Input";
+import { DayPicker } from "@/components/ui/DayPicker";
 import {
   buildStreakDates,
   computeStreak,
@@ -245,6 +246,7 @@ function EditPanel({
   const [cue,          setCue]          = useState(habit.cue ?? "");
   const [time,         setTime]         = useState(habit.scheduledTime ?? "");
   const [color,        setColor]        = useState(habit.color ?? "#C9A96E");
+  const [customDays,   setCustomDays]   = useState<number[]>(habit.customDays ?? []);
   const [weeklyTarget, setWeeklyTarget] = useState(habit.weeklyTarget ?? 7);
   const [difficulty,   setDifficulty]   = useState<import("@/types").Difficulty>(habit.difficulty ?? 2);
   const [saving,       setSaving]       = useState(false);
@@ -264,13 +266,14 @@ function EditPanel({
       cue: cue || undefined,
       scheduledTime: time || undefined,
       color,
-      weeklyTarget,
+      customDays: customDays.length > 0 ? customDays : undefined,
+      weeklyTarget: customDays.length > 0 ? customDays.length : weeklyTarget,
       difficulty,
       updatedAt: Date.now(),
     });
-    // update reminder time if set
+    // Update local reminder record
+    const existing = await db().reminders.where("habitId").equals(habit.id).first();
     if (time) {
-      const existing = await db().reminders.where("habitId").equals(habit.id).first();
       if (existing) {
         await db().reminders.update(existing.id, { time, updatedAt: Date.now() });
       } else {
@@ -280,7 +283,17 @@ function EditPanel({
           createdAt: Date.now(), updatedAt: Date.now(),
         });
       }
+    } else if (existing) {
+      await db().reminders.delete(existing.id);
     }
+    // Sync reminder to Supabase so backend cron fires push when app is closed
+    const { syncReminder } = await import("@/lib/notifications/syncReminder");
+    await syncReminder({
+      habitId: habit.id,
+      habitTitle: title.trim(),
+      remindTime: time,
+      days: customDays.length > 0 ? customDays : [0,1,2,3,4,5,6],
+    });
     setSaving(false);
     onClose();
   }
@@ -331,16 +344,22 @@ function EditPanel({
           placeholder="e.g. after morning coffee" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>Reminder time</Label>
-          <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
-        </div>
-        <div>
-          <Label>Weekly target (days)</Label>
-          <Input type="number" min={1} max={7} value={weeklyTarget}
-            onChange={e => setWeeklyTarget(Math.min(7, Math.max(1, Number(e.target.value))))} />
-        </div>
+      {/* Day picker — for non-daily habits */}
+      {habit.cadence !== "daily" && (
+        <DayPicker
+          label="Which days?"
+          selected={customDays}
+          onChange={days => {
+            setCustomDays(days);
+            setWeeklyTarget(days.length);
+          }}
+          single={habit.cadence === "weekly"}
+        />
+      )}
+
+      <div>
+        <Label>Reminder time</Label>
+        <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
       </div>
 
       <div>

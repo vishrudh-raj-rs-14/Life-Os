@@ -8,6 +8,7 @@ import { ArrowLeft, Check, ListChecks, Plus, Timer, X } from "lucide-react";
 import { db } from "@/lib/db/dexie";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import { DayPicker } from "@/components/ui/DayPicker";
 import { LOCAL_USER_ID, cn } from "@/lib/utils";
 import type { Cadence, Difficulty, HabitKind, LifeArea, TargetMode } from "@/types";
 
@@ -40,8 +41,6 @@ const CADENCES: { value: Cadence; label: string }[] = [
   { value: "custom",   label: "Custom" },
 ];
 
-const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
-
 export default function NewGoalPage() {
   const router = useRouter();
 
@@ -71,14 +70,19 @@ export default function NewGoalPage() {
 
   function pickCadence(c: Cadence) {
     setCadence(c);
-    // auto-set sensible weeklyTarget when cadence changes
-    if (c === "daily")    setWeeklyTarget(7);
-    if (c === "alt-days") setWeeklyTarget(4);
-    if (c === "weekly")   setWeeklyTarget(1);
-  }
-
-  function toggleDay(d: number) {
-    setCustomDays(s => s.includes(d) ? s.filter(x => x !== d) : [...s, d].sort());
+    if (c === "daily") {
+      setCustomDays([]);
+      setWeeklyTarget(7);
+    } else if (c === "alt-days") {
+      setCustomDays([1, 3, 5]);   // Mon Wed Fri
+      setWeeklyTarget(3);
+    } else if (c === "weekly") {
+      setCustomDays([new Date().getDay() || 1]); // today, or Monday
+      setWeeklyTarget(1);
+    } else if (c === "custom") {
+      // Keep whatever was already selected
+      setWeeklyTarget(customDays.length || 3);
+    }
   }
 
   async function save() {
@@ -91,6 +95,9 @@ export default function NewGoalPage() {
     const finalTarget = kind === "checklist"
       ? Math.max(1, cleanedSteps?.length ?? 1) : target;
 
+    // For non-daily habits, always persist customDays (used by isHabitDueToday)
+    const finalCustomDays = cadence === "daily" ? undefined : customDays;
+
     await db().habits.add({
       id,
       userId: LOCAL_USER_ID,
@@ -102,7 +109,7 @@ export default function NewGoalPage() {
       targetMode,
       steps: cleanedSteps,
       cadence,
-      customDays: cadence === "custom" ? customDays : undefined,
+      customDays: finalCustomDays,
       cue: cue || undefined,
       scheduledTime: time || undefined,
       difficulty,
@@ -123,6 +130,14 @@ export default function NewGoalPage() {
         enabled: 1,
         createdAt: t,
         updatedAt: t,
+      });
+      // Sync reminder to Supabase so backend cron can send push when app is closed
+      const { syncReminder } = await import("@/lib/notifications/syncReminder");
+      await syncReminder({
+        habitId: id,
+        habitTitle: title.trim(),
+        remindTime: time,
+        days: finalCustomDays ?? [0,1,2,3,4,5,6],
       });
     }
 
@@ -283,7 +298,7 @@ export default function NewGoalPage() {
         <Label>Cadence</Label>
         <div className="grid grid-cols-4 gap-2">
           {CADENCES.map(c => (
-            <button key={c.value} onClick={() => pickCadence(c.value)}
+            <button key={c.value} type="button" onClick={() => pickCadence(c.value)}
               className={cn(
                 "h-10 rounded-md border text-xs font-mono",
                 cadence === c.value
@@ -296,22 +311,18 @@ export default function NewGoalPage() {
         </div>
       </div>
 
-      {cadence === "custom" && (
-        <div>
-          <Label>Days</Label>
-          <div className="flex gap-1.5">
-            {DAYS.map((d, i) => (
-              <button key={i} onClick={() => toggleDay(i)}
-                className={cn(
-                  "flex-1 h-10 rounded-md text-xs font-mono border",
-                  customDays.includes(i)
-                    ? "bg-[var(--accent)]/[0.1] border-[var(--accent)]/60 text-[var(--accent)]"
-                    : "bg-[var(--surface)] border-[var(--border)] text-[var(--ink-3)]"
-                )}>
-                {d}
-              </button>
-            ))}
-          </div>
+      {/* Day picker — shown for every non-daily cadence */}
+      {cadence !== "daily" && (
+        <div className="os-block p-3.5">
+          <DayPicker
+            label="Which days?"
+            selected={customDays}
+            onChange={days => {
+              setCustomDays(days);
+              setWeeklyTarget(days.length);
+            }}
+            single={cadence === "weekly"}
+          />
         </div>
       )}
 

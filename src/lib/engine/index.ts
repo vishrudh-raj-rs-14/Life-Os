@@ -200,18 +200,22 @@ export function consecutiveWeeksHit(
 
 // Should this habit appear today?
 export function isHabitDueToday(habit: Habit, today: Date = new Date()): boolean {
-  const dow = today.getDay();
+  const dow = today.getDay(); // 0 = Sun … 6 = Sat
   if (habit.cadence === "daily") return true;
-  if (habit.cadence === "weekly") return dow === 1; // Monday
-  if (habit.cadence === "alt-days") {
-    // alternate based on day-of-year parity (stable)
-    const start = new Date(today.getFullYear(), 0, 0);
-    const diff = today.getTime() - start.getTime();
-    const day = Math.floor(diff / (1000 * 60 * 60 * 24));
-    return day % 2 === 0;
-  }
-  if (habit.cadence === "custom" && habit.customDays?.length) {
+
+  // ALL non-daily cadences: if the user picked specific days, use those.
+  // This covers "alt-days", "weekly", and "custom" uniformly.
+  if (habit.customDays && habit.customDays.length > 0) {
     return habit.customDays.includes(dow);
+  }
+
+  // Legacy fallbacks for habits created before the day-picker existed.
+  if (habit.cadence === "weekly")   return dow === 1;        // Monday
+  if (habit.cadence === "alt-days") {
+    const start = new Date(today.getFullYear(), 0, 0);
+    const diff  = today.getTime() - start.getTime();
+    const day   = Math.floor(diff / (1000 * 60 * 60 * 24));
+    return day % 2 === 0;
   }
   return false;
 }

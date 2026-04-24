@@ -106,6 +106,7 @@ async function handleSend(req: NextRequest, bodyObj: Record<string, string>) {
   const webpush = (await import("web-push")).default;
   webpush.setVapidDetails(email, publicKey, privateKey);
 
+  // ── Generic broadcast to all subscribers ──────────────────────────────────
   const payload = JSON.stringify({ title, body, url, tag });
   const results = await Promise.allSettled(
     (rows as Array<{ subscription: string }>).map(async (row) => {
@@ -114,10 +115,61 @@ async function handleSend(req: NextRequest, bodyObj: Record<string, string>) {
     })
   );
 
+  // ── Per-habit reminders: fire for schedules matching current HH:MM ────────
+  let remindersSent = 0;
+  try {
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000); // UTC → IST
+    const hh = String(nowIST.getUTCHours()).padStart(2, "0");
+    const mm = String(nowIST.getUTCMinutes()).padStart(2, "0");
+    const currentTime = `${hh}:${mm}`;
+    const todayDow = nowIST.getUTCDay(); // 0=Sun…6=Sat
+
+    // Fetch reminders due now (match HH only — within 30-min window)
+    const [hCurrent] = currentTime.split(":");
+    const remRes = await fetch(
+      `${supabaseUrl}/rest/v1/reminder_schedules?select=endpoint,habit_title,remind_time,days`,
+      { headers: { apikey: supabaseKey!, Authorization: `Bearer ${supabaseKey}` } }
+    );
+    if (remRes.ok) {
+      const remRows = await remRes.json() as Array<{
+        endpoint: string; habit_title: string; remind_time: string; days: number[];
+      }>;
+      const due = remRows.filter(r => {
+        const [hRem] = r.remind_time.split(":");
+        return hRem === hCurrent && r.days.includes(todayDow);
+      });
+      // Fetch push subscription JSON for each endpoint
+      const subRes = await fetch(
+        `${supabaseUrl}/rest/v1/push_subscriptions?select=endpoint,subscription`,
+        { headers: { apikey: supabaseKey!, Authorization: `Bearer ${supabaseKey}` } }
+      );
+      if (subRes.ok) {
+        const subs = await subRes.json() as Array<{ endpoint: string; subscription: string }>;
+        const subMap = new Map(subs.map(s => [s.endpoint, s.subscription]));
+        await Promise.allSettled(
+          due.map(async r => {
+            const subJson = subMap.get(r.endpoint);
+            if (!subJson) return;
+            const p = JSON.stringify({
+              title: `⏰ Time for: ${r.habit_title}`,
+              body: `Your ${r.remind_time} reminder. Let's go.`,
+              url: "/",
+              tag: `reminder_${r.habit_title}`,
+            });
+            await webpush.sendNotification(JSON.parse(subJson), p);
+            remindersSent++;
+          })
+        );
+      }
+    }
+  } catch (remErr) {
+    console.warn("Reminder send error (non-fatal):", remErr);
+  }
+
   const sent   = results.filter(r => r.status === "fulfilled").length;
   const failed = results.filter(r => r.status === "rejected").length;
-  console.log(`[push/send] type=${type} sent=${sent} failed=${failed}`);
-  return NextResponse.json({ sent, failed, type });
+  console.log(`[push/send] type=${type} sent=${sent} failed=${failed} reminders=${remindersSent}`);
+  return NextResponse.json({ sent, failed, type, remindersSent });
 }
 
 // GET — used by Vercel cron jobs (secret + type in query string)
