@@ -1,28 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import webpush from "web-push";
 
-webpush.setVapidDetails(
-  process.env.VAPID_EMAIL ?? "mailto:admin@lifeos.app",
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "",
-  process.env.VAPID_PRIVATE_KEY ?? ""
-);
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-// Called by Vercel cron at scheduled times.
-// Body: { title, body, url?, tag?, secret }
+// Called by Vercel cron or manually.  Body: { title, body, url?, tag?, secret }
 export async function POST(req: NextRequest) {
   try {
-    // Simple shared secret so the cron endpoint isn't public
     const { title, body, url, tag, secret } = await req.json();
     if (secret !== process.env.CRON_SECRET) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const publicKey  = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+    const privateKey = process.env.VAPID_PRIVATE_KEY ?? "";
+    const email      = process.env.VAPID_EMAIL ?? "mailto:admin@lifeos.app";
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+    if (!publicKey || !privateKey) {
+      return NextResponse.json({ error: "VAPID keys not configured" }, { status: 503 });
+    }
     if (!supabaseUrl || !supabaseKey) {
       return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
     }
+
+    // Lazy import + configure web-push at request time so build succeeds
+    const webpush = (await import("web-push")).default;
+    webpush.setVapidDetails(email, publicKey, privateKey);
 
     // Fetch all subscriptions
     const res = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?select=subscription`, {
@@ -50,7 +54,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Also allow GET for manual testing from the browser
 export async function GET() {
   return NextResponse.json({ status: "push endpoint live" });
 }
