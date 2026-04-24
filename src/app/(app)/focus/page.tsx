@@ -263,7 +263,7 @@ function FocusInner() {
 
       {!timer.startedAt && (
         <p className="text-center text-[11px] text-[var(--ink-3)] leading-relaxed font-mono">
-          phone in another room · notifications off · compound rewards
+          phone in another room · notifications off · deep work rewards
           consistency more than intensity
         </p>
       )}

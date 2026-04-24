@@ -14,52 +14,39 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router      = useRouter();
   const pathname    = usePathname();
-  const { user, loading, load } = useUser();
+  const { load }    = useUser();
   const checked     = useRef(false);
 
-  // Single guard — runs once after mount
   useEffect(() => {
     if (checked.current) return;
     checked.current = true;
 
     void (async () => {
-      // 1. Must have a Supabase session (Google login)
       const sb = supabaseBrowser();
       if (sb) {
         const { data } = await sb.auth.getSession();
-        if (!data.session) {
-          router.replace("/login");
-          return;
-        }
+        if (!data.session) { router.replace("/login"); return; }
       }
-
-      // 2. Must have a local user profile (onboarding)
       await load();
       const repo = (await import("@/lib/repo")).getRepo;
       const u = await (await repo()).getUser();
-      if (!u) {
-        router.replace("/onboarding");
-        return;
-      }
-
-      // All good — make sure Zustand is in sync
-      if (!user) await load();
+      if (!u) { router.replace("/onboarding"); return; }
+      await load();
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (loading && !user) return null; // brief flicker guard
-
+  // Never return null here — that causes blank screens on every Zustand
+  // re-render. Auth redirects handle unauthorised access; each page guards
+  // its own empty/loading state.
   return (
-    // No overflow constraints on the wrapper — the body must be the scroll
-    // container for Chrome/Safari pull-to-refresh to fire. The BottomNav and
-    // InstallPrompt are fixed-positioned so they sit outside normal flow.
-    // Page transitions are y-axis only so no horizontal overflow to clip.
     <div className="mx-auto w-full max-w-md safe-top">
       <PullToRefresh />
       <AppBoot />
       <main className="pb-32">
-        <AnimatePresence mode="wait" initial={false}>
+        {/* mode="sync" lets the incoming page fade in while the outgoing
+            page fades out simultaneously — no empty gap between routes.    */}
+        <AnimatePresence mode="sync" initial={false}>
           <PageTransition key={pathname}>
             {children}
           </PageTransition>

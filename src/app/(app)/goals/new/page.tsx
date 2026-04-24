@@ -138,7 +138,7 @@ export default function NewGoalPage() {
         </Link>
         <div>
           <div className="os-label">New goal</div>
-          <h1 className="serif text-2xl text-[var(--ink-1)]">What will you compound?</h1>
+          <h1 className="serif text-2xl text-[var(--ink-1)]">Add a new goal</h1>
         </div>
       </div>
 

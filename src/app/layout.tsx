@@ -20,14 +20,14 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Life OS — Compound your goals",
+  title: "Life OS — Build the system. Become the person.",
   description:
-    "A personal operating system for your goals: pipeline any ambition into habits, trackers, and weekly reviews. Compound the work.",
+    "Your personal operating system for goals. Pipeline any ambition into daily habits, track progress, and grow every week.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Life OS",
+    title: "Life OS — Build the system.",
   },
   icons: {
     icon: "/icon.svg",

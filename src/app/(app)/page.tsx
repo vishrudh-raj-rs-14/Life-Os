@@ -313,7 +313,7 @@ function EmptyToday() {
     <div className="os-block p-5 text-center">
       <div className="os-label">Inbox zero</div>
       <p className="text-sm text-[var(--ink-2)] my-3">
-        No quests scheduled for today. Pipeline a goal to start compounding.
+        No goals due today. Add a goal to start building the system.
       </p>
       <Link href="/goals/new">
         <Button>

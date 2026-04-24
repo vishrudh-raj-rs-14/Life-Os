@@ -1,11 +1,11 @@
 {
-  "name": "Compound — Habit & Goal Tracker",
-  "short_name": "Compound",
-  "description": "Gamified habit tracker that compounds the time you put into your goals.",
+  "name": "Life OS",
+  "short_name": "Life OS",
+  "description": "Your personal operating system for goals — pipeline any ambition into daily habits, track progress, and compound the work.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#07060d",
-  "theme_color": "#07060d",
+  "background_color": "#0a0908",
+  "theme_color": "#0a0908",
   "orientation": "portrait",
   "categories": ["productivity", "lifestyle", "health"],
   "icons": [

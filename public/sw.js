@@ -1,6 +1,6 @@
 /* Compound service worker — basic offline shell + web push */
 
-const CACHE = "compound-v1";
+const CACHE = "lifeos-v1";
 const PRECACHE_URLS = ["/", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -43,7 +43,7 @@ self.addEventListener("fetch", (event) => {
 
 // Web Push
 self.addEventListener("push", (event) => {
-  let data = { title: "Compound", body: "Time to move." };
+  let data = { title: "Life OS", body: "Time to move." };
   try {
     if (event.data) data = event.data.json();
   } catch {

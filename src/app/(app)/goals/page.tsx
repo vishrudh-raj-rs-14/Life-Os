@@ -105,7 +105,7 @@ export default function GoalsPage() {
         <div className="os-block p-8 text-center">
           <div className="serif text-2xl text-[var(--ink-3)] mb-1">Empty.</div>
           <p className="text-sm text-[var(--ink-3)] mb-4">
-            Add your first goal — what do you want to compound?
+            Add your first goal to start building your system.
           </p>
           <Link href="/goals/new">
             <Button>

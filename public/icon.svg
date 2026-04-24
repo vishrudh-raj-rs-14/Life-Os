@@ -1,14 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#7C5CFF"/>
-      <stop offset="50%" stop-color="#E879F9"/>
-      <stop offset="100%" stop-color="#F472B6"/>
-    </linearGradient>
-  </defs>
-  <rect width="192" height="192" rx="44" fill="#07060d"/>
-  <g transform="translate(96 96)">
-    <circle r="62" fill="none" stroke="url(#g)" stroke-width="14" stroke-linecap="round" stroke-dasharray="320 80" transform="rotate(-90)"/>
-    <text text-anchor="middle" dominant-baseline="central" fill="url(#g)" font-family="Inter, system-ui, sans-serif" font-size="62" font-weight="800">C</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0a0908"/>
+  <!-- Gold "L" mark: vertical bar + horizontal bar -->
+  <rect x="172" y="128" width="72" height="256" rx="8" fill="#c9a961"/>
+  <rect x="172" y="312" width="168" height="72" rx="8" fill="#c9a961"/>
 </svg>
