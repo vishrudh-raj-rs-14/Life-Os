@@ -258,6 +258,19 @@ export interface Nudge {
   createdAt: number;
 }
 
+// --- body log (daily weight + progress photo) ---
+export interface BodyLog {
+  id: string;
+  userId: string;
+  date: string;      // yyyy-MM-dd (one per day)
+  weight?: number;   // kg
+  notes?: string;
+  blob?: Blob;       // progress photo stored in IndexedDB
+  mimeType?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // --- goal journal entries (text / photo attached to a goal by date) ---
 export interface GoalEntry {
   id: string;

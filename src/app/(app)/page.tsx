@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { nanoid } from "nanoid";
 import { Plus } from "lucide-react";
+import { motion } from "framer-motion";
 import type { Habit, Log } from "@/types";
 import { db } from "@/lib/db/dexie";
 import { useUser } from "@/store/useUser";
@@ -12,7 +13,8 @@ import { useTimer } from "@/store/useTimer";
 import { HeaderBar } from "@/components/today/HeaderBar";
 import { QuestCard } from "@/components/today/QuestCard";
 import { ActiveTimerCard } from "@/components/today/ActiveTimerCard";
-import { habitDoneToday, isHabitDueToday, xpForHabit } from "@/lib/engine";
+import { LevelUpOverlay } from "@/components/LevelUpOverlay";
+import { habitDoneToday, isHabitDueToday, xpForHabit, levelName } from "@/lib/engine";
 import { LOCAL_USER_ID, nowMs, todayISO, vibrate } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
@@ -21,6 +23,7 @@ export default function TodayPage() {
   const { user, awardXp, bumpStreak, load } = useUser();
   const timer = useTimer();
   const [today] = useState(todayISO());
+  const [levelUp, setLevelUp] = useState<{ level: number; name: string } | null>(null);
 
   useEffect(() => {
     timer.hydrate();
@@ -71,6 +74,8 @@ export default function TodayPage() {
     return days;
   }, []);
 
+  const dismissLevelUp = useCallback(() => setLevelUp(null), []);
+
   if (!user) return null;
 
   const completedCount = dueHabits.filter((h) => {
@@ -90,7 +95,7 @@ export default function TodayPage() {
       await bumpStreak();
       vibrate(10);
       if (r.leveledUp) {
-        toast({ emoji: "⏶", title: `Level ${r.newLevel}` });
+        setLevelUp({ level: r.newLevel, name: levelName(r.newLevel) });
       }
     } else {
       // remove |delta| worth of value from the most recent logs (or as much as possible)
@@ -140,7 +145,7 @@ export default function TodayPage() {
     await bumpStreak();
     vibrate([20, 30, 40]);
     if (r.leveledUp) {
-      toast({ emoji: "⏶", title: `Level ${r.newLevel}` });
+      setLevelUp({ level: r.newLevel, name: levelName(r.newLevel) });
     } else {
       toast({ emoji: "✓", title: `+${xp} XP`, description: h.title });
     }
@@ -192,6 +197,14 @@ export default function TodayPage() {
   }
 
   return (
+    <>
+    {levelUp && (
+      <LevelUpOverlay
+        level={levelUp.level}
+        levelName={levelUp.name}
+        onDone={dismissLevelUp}
+      />
+    )}
     <div className="space-y-5">
       <HeaderBar user={user} />
 
@@ -202,19 +215,22 @@ export default function TodayPage() {
       )}
 
       <section className="px-5">
-        <SectionHeader
-          title="Now"
-          right={
-            <span className="font-mono text-[11px] text-[var(--ink-3)]">
-              {completedCount}/{dueHabits.length} · +{totalXpToday} xp
-            </span>
-          }
-        />
+        <div className="flex items-baseline justify-between mb-2">
+          <h2 className="serif text-xl text-[var(--ink-1)]">Now</h2>
+          <span className="font-mono text-[11px] text-[var(--ink-3)]">
+            {completedCount}/{dueHabits.length} · +{totalXpToday} xp
+          </span>
+        </div>
 
         {dueHabits.length === 0 && optionalHabits.length === 0 ? (
           <EmptyToday />
         ) : (
-          <div className="space-y-2">
+          <motion.div
+            className="space-y-2"
+            initial="hidden"
+            animate="visible"
+            variants={{ visible: { transition: { staggerChildren: 0.06 } } }}
+          >
             {dueHabits.map((h) => {
               const { done, value, progress } = habitDoneToday(
                 h,
@@ -223,19 +239,24 @@ export default function TodayPage() {
               );
               const todayLog = (todayLogs ?? []).find((l) => l.habitId === h.id);
               return (
-                <QuestCard
+                <motion.div
                   key={h.id}
-                  habit={h}
-                  value={value}
-                  done={done}
-                  progress={progress}
-                  xp={xpForHabit(h, h.target)}
-                  todayStepsMask={todayLog?.steps}
-                  recent={stripFor(h)}
-                  onLog={(delta) => void logQuantity(h, delta)}
-                  onToggleBinary={() => void toggleBinary(h)}
-                  onToggleStep={(i) => void toggleStep(h, i)}
-                />
+                  variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+                  transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                >
+                  <QuestCard
+                    habit={h}
+                    value={value}
+                    done={done}
+                    progress={progress}
+                    xp={xpForHabit(h, h.target)}
+                    todayStepsMask={todayLog?.steps}
+                    recent={stripFor(h)}
+                    onLog={(delta) => void logQuantity(h, delta)}
+                    onToggleBinary={() => void toggleBinary(h)}
+                    onToggleStep={(i) => void toggleStep(h, i)}
+                  />
+                </motion.div>
               );
             })}
 
@@ -255,44 +276,35 @@ export default function TodayPage() {
                   );
                   const todayLog = (todayLogs ?? []).find((l) => l.habitId === h.id);
                   return (
-                    <QuestCard
+                    <motion.div
                       key={h.id}
-                      habit={h}
-                      optional
-                      value={value}
-                      done={done}
-                      progress={progress}
-                      xp={xpForHabit(h, h.target)}
-                      todayStepsMask={todayLog?.steps}
-                      recent={stripFor(h)}
-                      onLog={(delta) => void logQuantity(h, delta)}
-                      onToggleBinary={() => void toggleBinary(h)}
-                      onToggleStep={(i) => void toggleStep(h, i)}
-                    />
+                      variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+                      transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                    >
+                      <QuestCard
+                        habit={h}
+                        optional
+                        value={value}
+                        done={done}
+                        progress={progress}
+                        xp={xpForHabit(h, h.target)}
+                        todayStepsMask={todayLog?.steps}
+                        recent={stripFor(h)}
+                        onLog={(delta) => void logQuantity(h, delta)}
+                        onToggleBinary={() => void toggleBinary(h)}
+                        onToggleStep={(i) => void toggleStep(h, i)}
+                      />
+                    </motion.div>
                   );
                 })}
               </>
             )}
-          </div>
+          </motion.div>
         )}
       </section>
 
     </div>
-  );
-}
-
-function SectionHeader({
-  title,
-  right,
-}: {
-  title: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline justify-between mb-2">
-      <h2 className="serif text-xl text-[var(--ink-1)]">{title}</h2>
-      {right}
-    </div>
+    </>
   );
 }
 

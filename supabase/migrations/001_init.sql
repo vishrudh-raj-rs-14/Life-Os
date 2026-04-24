@@ -290,3 +290,14 @@ create policy "owner_photos" on storage.objects for all
       select id from user_profile where auth_user_id = auth.uid() limit 1
     )
   );
+
+-- ─── push subscriptions (web push VAPID) ─────────────────────────────────────
+create table if not exists push_subscriptions (
+  id           bigserial primary key,
+  endpoint     text unique not null,
+  subscription jsonb not null,
+  created_at   timestamptz default now()
+);
+alter table push_subscriptions enable row level security;
+create policy "anon_insert_subscription" on push_subscriptions
+  for insert with check (true);

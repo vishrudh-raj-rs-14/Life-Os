@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import type { Cadence } from "@/types";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Plus, ChevronRight } from "lucide-react";
 import { addDays, startOfWeek } from "date-fns";
@@ -10,6 +11,15 @@ import { Button } from "@/components/ui/Button";
 import { habitDoneToday, isHabitDueToday } from "@/lib/engine";
 import { todayISO, cn } from "@/lib/utils";
 import type { Habit } from "@/types";
+
+// Derive a sensible weekly target from cadence when the user hasn't set one.
+function cadenceWeeklyDefault(cadence: Cadence, customDays?: number[]): number {
+  if (cadence === "daily")    return 7;
+  if (cadence === "alt-days") return 4;
+  if (cadence === "weekly")   return 1;
+  if (cadence === "custom")   return customDays?.length ?? 5;
+  return 7;
+}
 
 const AREA_LABELS: Record<string, string> = {
   career: "Career",
@@ -111,8 +121,10 @@ export default function GoalsPage() {
           {areaRows.map(({ habit, stats, todayStatus, dueToday }) => {
               const color = habit.color ?? "var(--accent)";
 
-            // weeklyTarget overrides cadence-derived due count for display
-            const displayTarget = habit.weeklyTarget ?? stats.due;
+            // weeklyTarget overrides cadence-derived count; never use elapsed-days count
+            const displayTarget =
+              habit.weeklyTarget ??
+              cadenceWeeklyDefault(habit.cadence, habit.customDays);
             const displayPct = displayTarget > 0
               ? Math.min(1, stats.done / displayTarget) : 0;
 

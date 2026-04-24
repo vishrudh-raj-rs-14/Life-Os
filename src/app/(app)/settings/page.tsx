@@ -48,6 +48,27 @@ export default function SettingsPage() {
   async function ask() {
     const p = await ensurePermission();
     setPerm(p);
+    // Register push subscription after granting permission
+    if (p === "granted" && "serviceWorker" in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (!existing && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: Uint8Array.from(
+              [...atob(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY.replace(/-/g, "+").replace(/_/g, "/"))]
+                .map(c => c.charCodeAt(0))
+            ),
+          });
+          await fetch("/api/push/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(sub),
+          });
+        }
+      } catch { /* noop */ }
+    }
   }
 
   async function setTone(t: Tone) {

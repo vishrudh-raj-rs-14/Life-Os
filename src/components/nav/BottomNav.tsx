@@ -3,25 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   GitBranch,
   LayoutGrid,
-  Mic,
   Timer,
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Life OS nav:
-//   Now    — today's habits
-//   Goals  — your pipelines
-//   Focus  — timer (centre, elevated)
-//   Notes  — voice notes to self
-//   You    — profile + review + settings
+// Now | Goals | Focus (elevated) | Body | You
 const items = [
-  { href: "/", label: "Now", Icon: LayoutGrid },
+  { href: "/",      label: "Now",   Icon: LayoutGrid },
   { href: "/goals", label: "Goals", Icon: GitBranch },
   { href: "/focus", label: "Focus", Icon: Timer, accent: true },
-  { href: "/notes", label: "Notes", Icon: Mic },
+  { href: "/body",  label: "Body",  Icon: Activity },
   { href: "/profile", label: "You", Icon: User },
 ];
 
@@ -39,35 +34,24 @@ export function BottomNav() {
                 : path === href || path.startsWith(href + "/");
             if (accent) {
               return (
-                <Link
-                  key={href}
-                  href={href}
-                  className="flex-1 flex justify-center -mt-7"
-                >
-                  <div
-                    className={cn(
-                      "h-12 w-12 rounded-xl flex items-center justify-center border transition",
-                      active
-                        ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--bg)]"
-                        : "bg-[var(--surface-2)] border-[var(--border-strong)] text-[var(--accent)]"
-                    )}
-                  >
+                <Link key={href} href={href} className="flex-1 flex justify-center -mt-7">
+                  <div className={cn(
+                    "h-12 w-12 rounded-xl flex items-center justify-center border transition",
+                    active
+                      ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--bg)]"
+                      : "bg-[var(--surface-2)] border-[var(--border-strong)] text-[var(--accent)]"
+                  )}>
                     <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
                   </div>
                 </Link>
               );
             }
             return (
-              <Link
-                key={href}
-                href={href}
+              <Link key={href} href={href}
                 className={cn(
                   "flex-1 flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] transition uppercase tracking-wide font-mono",
-                  active
-                    ? "text-[var(--accent)]"
-                    : "text-[var(--ink-3)] hover:text-[var(--ink-2)]"
-                )}
-              >
+                  active ? "text-[var(--accent)]" : "text-[var(--ink-3)] hover:text-[var(--ink-2)]"
+                )}>
                 <Icon size={18} strokeWidth={active ? 2.2 : 1.6} />
                 <span className="leading-none">{label}</span>
               </Link>

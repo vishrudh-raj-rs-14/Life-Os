@@ -2,6 +2,7 @@ import Dexie, { type Table } from "dexie";
 import type {
   Achievement,
   AccountabilityStake,
+  BodyLog,
   Duel,
   FeedEvent,
   Friendship,
@@ -44,6 +45,8 @@ export class HabitDB extends Dexie {
   voiceNotes!: Table<VoiceNote, string>;
   // goal journal entries
   goalEntries!: Table<GoalEntry, string>;
+  // body logs (daily weight + progress photo)
+  bodyLogs!: Table<BodyLog, string>;
   // sync
   syncQueue!: Table<SyncQueueItem, string>;
 
@@ -99,9 +102,14 @@ export class HabitDB extends Dexie {
       voiceNotes: "id, userId, date, createdAt",
     });
 
-    // v4 — goal journal entries (text/photo per goal per date)
+    // v4 — goal journal entries
     this.version(4).stores({
       goalEntries: "id, userId, habitId, date, createdAt",
+    });
+
+    // v5 — body logs (daily weight + progress photo)
+    this.version(5).stores({
+      bodyLogs: "id, userId, date, createdAt",
     });
   }
 }

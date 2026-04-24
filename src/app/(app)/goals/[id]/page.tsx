@@ -482,7 +482,8 @@ export default function GoalDetailPage() {
 
           {/* weekly target bar */}
           {(() => {
-            const wTarget = habit.weeklyTarget ?? weekDue;
+            const wTarget = habit.weeklyTarget ??
+              (habit.cadence === "daily" ? 7 : habit.cadence === "alt-days" ? 4 : habit.cadence === "weekly" ? 1 : weekDue);
             const wPct = wTarget > 0 ? weekDone / wTarget : 0;
             return wTarget > 0 ? (
               <div className="mt-4">
