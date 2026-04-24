@@ -16,7 +16,9 @@ export async function POST(req: NextRequest) {
     const privateKey = process.env.VAPID_PRIVATE_KEY ?? "";
     const email      = process.env.VAPID_EMAIL ?? "mailto:admin@lifeos.app";
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // Prefer service-role key (bypasses RLS) — falls back to anon key in dev
+    const supabaseKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!publicKey || !privateKey) {
       return NextResponse.json({ error: "VAPID keys not configured" }, { status: 503 });

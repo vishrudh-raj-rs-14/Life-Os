@@ -11,7 +11,9 @@ export async function POST(req: NextRequest) {
     }
 
     const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // Prefer service-role key (bypasses RLS) — falls back to anon key in dev
+    const supabaseKey  =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (supabaseUrl && supabaseKey) {
       // Upsert into Supabase
@@ -21,7 +23,7 @@ export async function POST(req: NextRequest) {
           "Content-Type": "application/json",
           "apikey": supabaseKey,
           "Authorization": `Bearer ${supabaseKey}`,
-          "Prefer": "resolution=merge-duplicates",
+          "Prefer": "resolution=merge-duplicates,return=minimal",
         },
         body: JSON.stringify({
           endpoint: subscription.endpoint,
