@@ -87,7 +87,8 @@ let _repo: Repository | null = null;
 
 export async function getRepo(): Promise<Repository> {
   if (_repo) return _repo;
-  const { DexieRepository } = await import("./dexie");
-  _repo = new DexieRepository();
+  // Cloud-first: Supabase source-of-truth with Dexie cache fallback.
+  const { CloudRepository } = await import("./cloud");
+  _repo = new CloudRepository();
   return _repo;
 }
