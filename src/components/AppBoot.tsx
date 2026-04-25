@@ -97,10 +97,24 @@ export function AppBoot() {
           repo.listReminders(),
         ]);
         const d = db();
-        await d.habits.bulkPut(habits);
-        await d.logs.bulkPut(logs);
-        await d.sessions.bulkPut(sessions);
-        await d.reminders.bulkPut(reminders);
+        // Merge strategy: do NOT overwrite newer local rows.
+        // Otherwise the UI can flip-flop (optimistic update -> bootstrap overwrites -> later re-sync).
+        for (const h of habits) {
+          const local = await d.habits.get(h.id);
+          if (!local || (local.updatedAt ?? 0) <= (h.updatedAt ?? 0)) await d.habits.put(h);
+        }
+        for (const l of logs) {
+          const local = await d.logs.get(l.id);
+          if (!local || (local.updatedAt ?? 0) <= (l.updatedAt ?? 0)) await d.logs.put(l);
+        }
+        for (const s of sessions) {
+          const local = await d.sessions.get(s.id);
+          if (!local || (local.updatedAt ?? 0) <= (s.updatedAt ?? 0)) await d.sessions.put(s);
+        }
+        for (const r of reminders) {
+          const local = await d.reminders.get(r.id);
+          if (!local || (local.updatedAt ?? 0) <= (r.updatedAt ?? 0)) await d.reminders.put(r);
+        }
       } catch {
         /* offline / supabase unavailable */
       }
