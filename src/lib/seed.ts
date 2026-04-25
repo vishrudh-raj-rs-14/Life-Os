@@ -339,9 +339,9 @@ export async function seedStarter(opts: SeedOpts) {
 // ─── Vishrudh's personal starter goals ───────────────────────────────────────
 // Seeds directly into the habits table (flat model — habit IS the goal).
 
-export async function seedVishrudh() {
+export async function seedVishrudh(userIdOverride?: string) {
   const t = Date.now();
-  const authUid = await (async () => {
+  const authUid = userIdOverride ?? await (async () => {
     try {
       const { supabaseBrowser } = await import("@/lib/supabase/client");
       const sb = supabaseBrowser();
@@ -506,7 +506,9 @@ export async function seedVishrudh() {
     },
   ];
 
+  const repo = await getRepo();
   for (const h of habits) {
-    await getRepo().then((repo) => repo.upsertHabit({ id: nanoid(), ...h }));
+    await repo.upsertHabit({ id: nanoid(), ...h });
   }
+  return habits.length;
 }

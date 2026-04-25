@@ -232,11 +232,11 @@ export default function SettingsPage() {
       const { data } = sb ? await sb.auth.getUser() : { data: { user: null } };
       const email = data.user?.email ?? cloudUser;
       const shouldSeedVishrudh = shouldSeedVishrudhProfile(email, user?.handle);
+      const authUserId = data.user?.id ?? user!.userId;
       const t = Date.now();
-
-      await repo.clearAll();
-      await setUser({
+      const resetUser = {
         ...user!,
+        userId: authUserId,
         totalXp: 0,
         level: 1,
         streakDays: 0,
@@ -245,9 +245,33 @@ export default function SettingsPage() {
         dailyBonusDate: undefined,
         dailyBonusXp: undefined,
         updatedAt: t,
-      });
+      };
 
-      if (shouldSeedVishrudh) await seedVishrudh();
+      await repo.clearAll();
+      if (sb) {
+        const { error } = await sb.from("user_profile").upsert({
+          id: authUserId,
+          auth_user_id: authUserId,
+          handle: resetUser.handle,
+          display_name: resetUser.displayName,
+          class_name: resetUser.className,
+          tone: resetUser.tone,
+          total_xp: 0,
+          streak_days: 0,
+          streak_freezes: 2,
+          last_active_date: null,
+          is_public: resetUser.isPublic,
+          daily_bonus_date: null,
+          daily_bonus_xp: null,
+          created_at: resetUser.createdAt ?? t,
+          updated_at: t,
+          deleted_at: null,
+        });
+        if (error) throw error;
+      }
+      await setUser(resetUser);
+
+      if (shouldSeedVishrudh) await seedVishrudh(authUserId);
       await load();
       window.location.href = "/";
     } finally {
