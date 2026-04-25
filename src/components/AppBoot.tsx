@@ -46,16 +46,33 @@ export function AppBoot() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    let regRef: ServiceWorkerRegistration | undefined;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void regRef?.update();
+    };
+    const onPageShow = () => void regRef?.update();
+
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/sw.js")
-        .then(() => {
-          // Attempt push subscription after SW is ready
+      void navigator.serviceWorker
+        .register("/sw.js", { updateViaCache: "none" })
+        .then((reg) => {
+          regRef = reg;
           void subscribeToPush();
+          void reg.update();
+          intervalId = setInterval(() => void reg.update(), 60 * 60 * 1000);
+          document.addEventListener("visibilitychange", onVisible);
+          window.addEventListener("pageshow", onPageShow);
         })
         .catch(() => {/* noop */});
     }
     startSyncLoop();
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
+    };
   }, []);
 
   useEffect(() => {
