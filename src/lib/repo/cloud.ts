@@ -4,11 +4,16 @@ import type { Habit, Log, Reminder, Session, UserProfile } from "@/types";
 import type { Repository } from "./index";
 import { DexieRepository } from "./dexie";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { db } from "@/lib/db/dexie";
 
 // Cloud-first for core tables (user, habits, logs, sessions, reminders).
 // Dexie remains the offline cache fallback.
 
 // ─── Mappers: local (camelCase) <-> Supabase (snake_case) ────────────────────
+
+function isRemoteNewer<T extends { updatedAt?: number }>(remote: T, local?: T) {
+  return !local || (local.updatedAt ?? 0) <= (remote.updatedAt ?? 0);
+}
 
 function mapUserFromRow(r: any): UserProfile {
   return {
@@ -264,7 +269,10 @@ export class CloudRepository implements Repository {
     const { data, error } = await sb.from("habits").select("*");
     if (!error && Array.isArray(data)) {
       const habits = data.map(mapHabitFromRow).filter((h) => h.userId === u.userId);
-      for (const h of habits) await this.local.upsertHabit(h);
+      for (const h of habits) {
+        const local = await db().habits.get(h.id);
+        if (isRemoteNewer(h, local)) await db().habits.put(h);
+      }
       return habits
         .filter((h) => (opts?.goalId ? h.goalId === opts.goalId : true))
         .filter((h) => (opts?.includeArchived ? true : !h.archived && !h.deletedAt));
@@ -309,7 +317,10 @@ export class CloudRepository implements Repository {
     const { data, error } = await q;
     if (!error && Array.isArray(data)) {
       const logs = data.map(mapLogFromRow).filter((l) => l.userId === u.userId);
-      for (const l of logs) await this.local.upsertLog(l);
+      for (const l of logs) {
+        const local = await db().logs.get(l.id);
+        if (isRemoteNewer(l, local)) await db().logs.put(l);
+      }
       return logs.filter((l) => !l.deletedAt);
     }
     return this.local.listLogs(opts);
@@ -353,7 +364,10 @@ export class CloudRepository implements Repository {
     const { data, error } = await q;
     if (!error && Array.isArray(data)) {
       const sessions = data.map(mapSessionFromRow).filter((s) => s.userId === u.userId);
-      for (const s of sessions) await this.local.upsertSession(s);
+      for (const s of sessions) {
+        const local = await db().sessions.get(s.id);
+        if (isRemoteNewer(s, local)) await db().sessions.put(s);
+      }
       return sessions.filter((s) => !s.deletedAt);
     }
     return this.local.listSessions(opts);
@@ -382,7 +396,10 @@ export class CloudRepository implements Repository {
     const { data, error } = await sb.from("reminders").select("*");
     if (!error && Array.isArray(data)) {
       const rems = data.map(mapReminderFromRow).filter((r) => r.userId === u.userId);
-      for (const r of rems) await this.local.upsertReminder(r);
+      for (const r of rems) {
+        const local = await db().reminders.get(r.id);
+        if (isRemoteNewer(r, local)) await db().reminders.put(r);
+      }
       return rems;
     }
     return this.local.listReminders();

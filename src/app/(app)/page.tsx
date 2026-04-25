@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { nanoid } from "nanoid";
@@ -39,6 +39,7 @@ export default function TodayPage() {
   const [levelUp, setLevelUp] = useState<{ level: number; name: string } | null>(null);
   // Optimistic done state: habitId → true while the DB write is in-flight
   const [optimisticDone, setOptimisticDone] = useState<Record<string, boolean>>({});
+  const habitQueues = useRef<Record<string, Promise<void>>>({});
 
   useEffect(() => {
     timer.hydrate();
@@ -132,6 +133,17 @@ export default function TodayPage() {
   }
   const userId = user.userId;
 
+  function enqueueHabitOp(habitId: string, op: () => Promise<void>) {
+    const run = (habitQueues.current[habitId] ?? Promise.resolve())
+      .catch(() => {})
+      .then(op);
+    const cleanup = run.finally(() => {
+      if (habitQueues.current[habitId] === cleanup) delete habitQueues.current[habitId];
+    });
+    habitQueues.current[habitId] = cleanup;
+    return cleanup;
+  }
+
   const completedCount = dueHabits.filter((h) => {
     const { done } = habitDoneToday(h, todayLogs ?? [], today);
     return done;
@@ -141,6 +153,7 @@ export default function TodayPage() {
 
   async function logQuantity(h: Habit, delta: number) {
     if (delta === 0) return;
+    const freshTodayLogs = await db().logs.where("date").equals(today).toArray();
     if (delta > 0) {
       const xp = xpForHabit(h, delta);
       const t = nowMs();
@@ -157,7 +170,7 @@ export default function TodayPage() {
     } else {
       // remove |delta| worth of value from the most recent logs (or as much as possible)
       let remaining = -delta;
-      const todays = (todayLogs ?? [])
+      const todays = freshTodayLogs
         .filter((l) => l.habitId === h.id)
         .sort((a, b) => b.createdAt - a.createdAt);
       let xpToRefund = 0;
@@ -188,13 +201,14 @@ export default function TodayPage() {
   }
 
   async function toggleBinary(h: Habit) {
-    const { done } = habitDoneToday(h, todayLogs ?? [], today);
+    const freshTodayLogs = await db().logs.where("date").equals(today).toArray();
+    const { done } = habitDoneToday(h, freshTodayLogs, today);
 
     // Optimistic UI — flip immediately so button feels instant
     setOptimisticDone(prev => ({ ...prev, [h.id]: !done }));
 
     if (done) {
-      const todays = (todayLogs ?? []).filter((l) => l.habitId === h.id);
+      const todays = freshTodayLogs.filter((l) => l.habitId === h.id);
       for (const l of todays) {
         await db().logs.delete(l.id);
         void getRepo().then((r) => r.deleteLog(l.id)).catch(() => {});
@@ -221,7 +235,9 @@ export default function TodayPage() {
   }
 
   async function toggleStep(h: Habit, idx: number) {
-    const todays = (todayLogs ?? []).filter((l) => l.habitId === h.id);
+    const todays = (await db().logs.where("date").equals(today).toArray())
+      .filter((l) => l.habitId === h.id)
+      .sort((a, b) => a.createdAt - b.createdAt);
     let log = todays[0];
     if (!log) {
       const t = nowMs();
@@ -230,12 +246,13 @@ export default function TodayPage() {
       void getRepo().then((r) => r.upsertLog(newLog)).catch(() => {});
       log = newLog;
     }
-    const set = new Set(log.steps ?? []);
+
+    const previousXp = todays.reduce((sum, l) => sum + (l.xpAwarded ?? 0), 0);
+    const set = new Set(todays.flatMap((l) => l.steps ?? []));
     if (set.has(idx)) set.delete(idx);
     else set.add(idx);
     const stepsArr = Array.from(set).sort((a, b) => a - b);
     const value = stepsArr.length;
-    const previousXp = log.xpAwarded ?? 0;
     const xp = xpForHabit(h, value);
     await db().logs.update(log.id, {
       steps: stepsArr,
@@ -246,6 +263,10 @@ export default function TodayPage() {
     // Read back and upsert the updated row to cloud
     const updatedRow = await db().logs.get(log.id);
     if (updatedRow) void getRepo().then((r) => r.upsertLog(updatedRow)).catch(() => {});
+    for (const extra of todays.slice(1)) {
+      await db().logs.delete(extra.id);
+      void getRepo().then((r) => r.deleteLog(extra.id)).catch(() => {});
+    }
     const diff = xp - previousXp;
     if (diff !== 0) await awardXp(diff);
     if (value >= h.target) await bumpStreak();
@@ -358,9 +379,9 @@ export default function TodayPage() {
                     xp={xpForHabit(h, h.target)}
                     todayStepsMask={todayLog?.steps}
                     recent={stripFor(h)}
-                    onLog={(delta) => void logQuantity(h, delta)}
-                    onToggleBinary={() => void toggleBinary(h)}
-                    onToggleStep={(i) => void toggleStep(h, i)}
+                    onLog={(delta) => void enqueueHabitOp(h.id, () => logQuantity(h, delta))}
+                    onToggleBinary={() => void enqueueHabitOp(h.id, () => toggleBinary(h))}
+                    onToggleStep={(i) => void enqueueHabitOp(h.id, () => toggleStep(h, i))}
                   />
                 </motion.div>
               );
@@ -396,9 +417,9 @@ export default function TodayPage() {
                         xp={xpForHabit(h, h.target)}
                         todayStepsMask={todayLog?.steps}
                         recent={stripFor(h)}
-                        onLog={(delta) => void logQuantity(h, delta)}
-                        onToggleBinary={() => void toggleBinary(h)}
-                        onToggleStep={(i) => void toggleStep(h, i)}
+                        onLog={(delta) => void enqueueHabitOp(h.id, () => logQuantity(h, delta))}
+                        onToggleBinary={() => void enqueueHabitOp(h.id, () => toggleBinary(h))}
+                        onToggleStep={(i) => void enqueueHabitOp(h.id, () => toggleStep(h, i))}
                       />
                     </motion.div>
                   );
