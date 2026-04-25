@@ -235,37 +235,63 @@ function DurationControl({
   goalId?: string;
   done: boolean;
 }) {
+  const remaining = Math.max(0, target - value);
+  function quickLogFullTarget() {
+    if (remaining <= 0) return;
+    if (
+      !confirm(
+        "Credit today's full target without a focus timer?\n\nOnly use if you already did the work outside the app."
+      )
+    ) {
+      return;
+    }
+    vibrate(12);
+    onLog(remaining);
+  }
+
   return (
-    <div className="flex items-center gap-1.5 w-full">
-      <div
-        className={cn(
-          "flex-1 h-10 rounded-lg border flex items-baseline justify-center gap-1 font-mono",
-          done
-            ? "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]"
-            : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink-1)]"
-        )}
-      >
-        <span className="text-base font-semibold">{fmtMinutes(value)}</span>
-        <span className="text-xs text-[var(--ink-3)]">/ {fmtMinutes(target)}</span>
-      </div>
-      {[15, 30].map((m) => (
-        <button
-          key={m}
-          onClick={() => {
-            vibrate(8);
-            onLog(m);
-          }}
-          className="h-10 px-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink-2)] text-xs font-mono"
+    <div className="flex flex-col gap-1.5 w-full">
+      <div className="flex items-center gap-1.5 w-full">
+        <div
+          className={cn(
+            "flex-1 h-10 rounded-lg border flex items-baseline justify-center gap-1 font-mono",
+            done
+              ? "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]"
+              : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink-1)]"
+          )}
         >
-          +{m}
+          <span className="text-base font-semibold">{fmtMinutes(value)}</span>
+          <span className="text-xs text-[var(--ink-3)]">/ {fmtMinutes(target)}</span>
+        </div>
+        {[15, 30].map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => {
+              vibrate(8);
+              onLog(m);
+            }}
+            className="h-10 px-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink-2)] text-xs font-mono"
+          >
+            +{m}
+          </button>
+        ))}
+        <Link
+          href={`/focus${goalId ? `?goalId=${goalId}` : ""}`}
+          className="h-10 px-3 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)] text-xs font-mono inline-flex items-center gap-1 shrink-0"
+        >
+          <Timer size={12} /> Focus
+        </Link>
+      </div>
+      {!done && remaining > 0 && (
+        <button
+          type="button"
+          onClick={quickLogFullTarget}
+          className="self-end text-[10px] font-mono text-[var(--ink-3)] hover:text-[var(--ink-2)] underline underline-offset-2 decoration-[var(--border)]"
+        >
+          Quick log full target (no timer)
         </button>
-      ))}
-      <Link
-        href={`/focus${goalId ? `?goalId=${goalId}` : ""}`}
-        className="h-10 px-3 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)] text-xs font-mono inline-flex items-center gap-1"
-      >
-        <Timer size={12} /> Focus
-      </Link>
+      )}
     </div>
   );
 }

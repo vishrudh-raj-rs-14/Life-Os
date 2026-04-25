@@ -1,11 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
 import { motion, AnimatePresence } from "framer-motion";
 import { nanoid } from "nanoid";
-import { Pause, Play, Square, Zap } from "lucide-react";
+import { Pause, Play, RotateCcw, Square, Zap } from "lucide-react";
 import { db } from "@/lib/db/dexie";
 import { useTimer } from "@/store/useTimer";
 import { useUser } from "@/store/useUser";
@@ -26,6 +33,7 @@ import {
   xpForSession,
 } from "@/lib/engine";
 import { toast } from "@/components/ui/Toast";
+import { useFocusMediaSession } from "@/hooks/useFocusMediaSession";
 
 const PRESETS = [25, 45, 60, 90];
 
@@ -50,6 +58,22 @@ function FocusInner() {
     return () => clearInterval(i);
   }, []);
 
+  // Keep screen awake during a session (best-effort)
+  useEffect(() => {
+    if (!timer.startedAt) return;
+    let lock: { release: () => Promise<unknown> } | undefined;
+    const req = navigator.wakeLock
+      ?.request("screen")
+      .then((l) => {
+        lock = l;
+      })
+      .catch(() => {});
+    return () => {
+      void req;
+      void lock?.release();
+    };
+  }, [timer.startedAt]);
+
   const goals = useLiveQuery(
     () => db().habits.filter((h) => !h.archived && !h.deletedAt).toArray(),
     []
@@ -61,11 +85,27 @@ function FocusInner() {
     [goals, activeGoalId]
   );
 
-  const elapsedSec = timer.startedAt ? Math.floor((now - timer.startedAt) / 1000) : 0;
+  const elapsedMs = timer.startedAt ? timer.elapsedMs(now) : 0;
+  const elapsedSec = Math.floor(elapsedMs / 1000);
   const targetSec = target * 60;
   const progress = timer.startedAt ? Math.min(1, elapsedSec / targetSec) : 0;
   const m = Math.floor(elapsedSec / 60);
   const s = elapsedSec % 60;
+  const paused = !!timer.pausedAt;
+
+  const finishRef = useRef<(() => Promise<void>) | null>(null);
+
+  const onPlay = useCallback(() => {
+    timer.resume();
+    vibrate(10);
+  }, [timer]);
+  const onPause = useCallback(() => {
+    timer.pause();
+    vibrate(10);
+  }, [timer]);
+  const onStop = useCallback(() => {
+    void finishRef.current?.();
+  }, []);
 
   function start() {
     if (!activeGoalId) return;
@@ -73,7 +113,7 @@ function FocusInner() {
     timer.start(activeGoalId);
   }
 
-  async function stop() {
+  async function commitSession() {
     const result = timer.stop();
     if (!result) return;
     vibrate([15, 30, 15]);
@@ -81,8 +121,7 @@ function FocusInner() {
     const all = await db()
       .sessions.filter((s) => s.goalId === result.goalId && !s.deletedAt)
       .toArray();
-    // compound multiplier based on session history for this goal (habit)
-    const weeks = all.length >= 3 ? 1 : 0; // simplified: bonus after 3+ sessions
+    const weeks = all.length >= 3 ? 1 : 0;
     const baseXp = xpForSession(result.minutes);
     const xp = applyCompound(baseXp, weeks);
 
@@ -100,7 +139,6 @@ function FocusInner() {
       updatedAt: t,
     });
 
-    // Auto-credit any duration habit attached to this goal that is due today.
     let creditedHabitTitle: string | undefined;
     let creditedXp = 0;
     const today = todayISO();
@@ -146,6 +184,37 @@ function FocusInner() {
     router.push("/");
   }
 
+  async function finish() {
+    if (elapsedSec < 1) {
+      toast({
+        emoji: "⏱",
+        title: "Too short",
+        description: "Run at least a few seconds before finishing.",
+      });
+      return;
+    }
+    await commitSession();
+  }
+
+  finishRef.current = finish;
+
+  useFocusMediaSession({
+    active: !!timer.startedAt && !!activeGoal,
+    paused,
+    title: activeGoal?.title ?? "Focus",
+    subtitle: `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")} · ${paused ? "paused" : "running"}`,
+    onPlay,
+    onPause,
+    onStop,
+  });
+
+  function abandon() {
+    if (!confirm("Discard this session? Nothing will be saved.")) return;
+    vibrate(15);
+    timer.discard();
+    toast({ emoji: "—", title: "Session discarded", description: "No XP logged." });
+  }
+
   if (goals === undefined) {
     return (
       <div className="px-5 pt-6 pb-10 space-y-4">
@@ -163,7 +232,8 @@ function FocusInner() {
         <h1 className="serif text-3xl text-[var(--ink-1)]">Focus</h1>
         {timer.startedAt && (
           <span className="text-[11px] os-label flex items-center gap-1.5">
-            <span className="dot dot-on" /> live
+            <span className={paused ? "dot dot-off" : "dot dot-on"} />
+            {paused ? "paused" : "live"}
           </span>
         )}
       </div>
@@ -175,6 +245,7 @@ function FocusInner() {
             {(goals ?? []).map((g) => (
               <button
                 key={g.id}
+                type="button"
                 onClick={() => setChosenGoalId(g.id)}
                 className={`text-left os-block px-3 py-2.5 transition ${
                   chosenGoalId === g.id
@@ -217,6 +288,7 @@ function FocusInner() {
             {PRESETS.map((p) => (
               <button
                 key={p}
+                type="button"
                 onClick={() => setTarget(p)}
                 className={`px-3 h-9 rounded-md text-xs font-mono border transition ${
                   target === p
@@ -255,32 +327,73 @@ function FocusInner() {
         )}
       </AnimatePresence>
 
-      <div className="flex gap-3 pt-2">
+      <div className="flex flex-col gap-2 pt-2">
         {!timer.startedAt ? (
           <Button
             onClick={start}
             disabled={!activeGoalId}
             size="lg"
-            className="flex-1"
+            className="w-full"
           >
             <Play size={18} /> Start session
           </Button>
         ) : (
-          <Button onClick={stop} variant="success" size="lg" className="flex-1">
-            <Square size={18} /> Finish
-          </Button>
+          <>
+            <div className="flex gap-2">
+              {paused ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="lg"
+                  className="flex-1"
+                  onClick={() => {
+                    timer.resume();
+                    vibrate(10);
+                  }}
+                >
+                  <Play size={18} /> Resume
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="lg"
+                  className="flex-1"
+                  onClick={() => {
+                    timer.pause();
+                    vibrate(10);
+                  }}
+                >
+                  <Pause size={18} /> Pause
+                </Button>
+              )}
+              <Button
+                type="button"
+                onClick={() => void finish()}
+                variant="success"
+                size="lg"
+                className="flex-[1.2]"
+              >
+                <Square size={18} /> Finish
+              </Button>
+            </div>
+            <button
+              type="button"
+              onClick={abandon}
+              className="w-full py-2 text-[11px] font-mono text-[var(--ink-3)] hover:text-[var(--warn)] flex items-center justify-center gap-1.5"
+            >
+              <RotateCcw size={12} /> Abandon session (no save)
+            </button>
+          </>
         )}
       </div>
 
       {!timer.startedAt && (
         <p className="text-center text-[11px] text-[var(--ink-3)] leading-relaxed font-mono">
-          phone in another room · notifications off · deep work rewards
+          Pause anytime · lock-screen controls where supported · deep work rewards
           consistency more than intensity
         </p>
       )}
-      <span className="hidden">
-        <Pause />
-      </span>
     </div>
   );
 }
