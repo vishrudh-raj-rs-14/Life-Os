@@ -79,7 +79,7 @@ export default function OnboardingPage() {
         const { data } = await sb.auth.getUser();
         const authUid = data.user?.id;
         if (authUid) {
-          await sb.from("user_profile").upsert({
+          const { error: upsertErr } = await sb.from("user_profile").upsert({
             id: authUid,
             auth_user_id: authUid,
             handle: h,
@@ -90,6 +90,7 @@ export default function OnboardingPage() {
             // (Supabase defaults handle the initial values on first insert.)
             updated_at: Date.now(),
           });
+          if (upsertErr) throw upsertErr;
         }
       }
       await seedStarter({
