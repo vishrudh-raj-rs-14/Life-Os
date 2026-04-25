@@ -40,6 +40,7 @@ import {
 import { LOCAL_USER_ID, cn, todayISO } from "@/lib/utils";
 import { nanoid } from "nanoid";
 import type { GoalEntry, Habit } from "@/types";
+import { useUser } from "@/store/useUser";
 
 // ─── weekly bar data ──────────────────────────────────────────────────────────
 
@@ -166,13 +167,14 @@ function AddEntry({ habitId }: { habitId: string }) {
   const [blob, setBlob] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const user = useUser((s) => s.user);
 
   async function save() {
     if (!text.trim() && !blob) return;
     setSaving(true);
     await db().goalEntries.add({
       id: nanoid(),
-      userId: LOCAL_USER_ID,
+      userId: user?.userId ?? LOCAL_USER_ID,
       habitId,
       date: todayISO(),
       text: text.trim() || undefined,
@@ -278,7 +280,7 @@ function EditPanel({
         await db().reminders.update(existing.id, { time, updatedAt: Date.now() });
       } else {
         await db().reminders.put({
-          id: nanoid(), userId: LOCAL_USER_ID,
+          id: nanoid(), userId: habit.userId ?? LOCAL_USER_ID,
           habitId: habit.id, time, tone: "coach", enabled: 1,
           createdAt: Date.now(), updatedAt: Date.now(),
         });

@@ -9,7 +9,8 @@ import { db } from "@/lib/db/dexie";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { DayPicker } from "@/components/ui/DayPicker";
-import { LOCAL_USER_ID, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { useUser } from "@/store/useUser";
 import type { Cadence, Difficulty, HabitKind, LifeArea, TargetMode } from "@/types";
 
 const COLORS = [
@@ -43,6 +44,7 @@ const CADENCES: { value: Cadence; label: string }[] = [
 
 export default function NewGoalPage() {
   const router = useRouter();
+  const user = useUser((s) => s.user);
 
   const [title,      setTitle]      = useState("");
   const [area,       setArea]       = useState<LifeArea>("career");
@@ -98,9 +100,10 @@ export default function NewGoalPage() {
     // For non-daily habits, always persist customDays (used by isHabitDueToday)
     const finalCustomDays = cadence === "daily" ? undefined : customDays;
 
+    const userId = user?.userId ?? "local-user";
     await db().habits.add({
       id,
-      userId: LOCAL_USER_ID,
+      userId,
       title: title.trim(),
       color,
       kind,
@@ -123,7 +126,7 @@ export default function NewGoalPage() {
     if (time) {
       await db().reminders.put({
         id: nanoid(),
-        userId: LOCAL_USER_ID,
+        userId,
         habitId: id,
         time,
         tone: "coach",

@@ -72,6 +72,29 @@ export default function OnboardingPage() {
     setSubmitting(true);
     try {
       const h = handle.trim().toLowerCase();
+      // Ensure the cloud profile exists and is bound to this auth user.
+      // We use auth.uid() (uuid) as the stable user_profile.id across devices.
+      const sb = supabaseBrowser();
+      if (sb) {
+        const { data } = await sb.auth.getUser();
+        const authUid = data.user?.id;
+        if (authUid) {
+          await sb.from("user_profile").upsert({
+            id: authUid,
+            auth_user_id: authUid,
+            handle: h,
+            display_name: name.trim(),
+            class_name: "polymath",
+            tone,
+            total_xp: 0,
+            streak_days: 0,
+            streak_freezes: 2,
+            is_public: 0,
+            created_at: Date.now(),
+            updated_at: Date.now(),
+          });
+        }
+      }
       await seedStarter({
         className: "polymath",
         handle: h,
@@ -81,7 +104,6 @@ export default function OnboardingPage() {
       });
       // Seed personal goals when the handle is "vishrudh" OR the Google
       // account is vishrudh.shrinivas@gmail.com
-      const sb = supabaseBrowser();
       let googleEmail = "";
       if (sb) {
         const { data } = await sb.auth.getUser();

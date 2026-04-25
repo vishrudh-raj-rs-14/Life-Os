@@ -23,7 +23,7 @@ import {
   maxDailyXpForHabit,
   xpForHabit,
 } from "@/lib/engine";
-import { LOCAL_USER_ID, nowMs, todayISO, vibrate } from "@/lib/utils";
+import { nowMs, todayISO, vibrate } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { SkeletonCard } from "@/components/ui/Skeleton";
@@ -129,6 +129,7 @@ export default function TodayPage() {
       </div>
     );
   }
+  const userId = user.userId;
 
   const completedCount = dueHabits.filter((h) => {
     const { done } = habitDoneToday(h, todayLogs ?? [], today);
@@ -142,7 +143,7 @@ export default function TodayPage() {
     if (delta > 0) {
       const xp = xpForHabit(h, delta);
       const t = nowMs();
-      await db().logs.add(stampedLog(h, today, delta, xp, t));
+      await db().logs.add(stampedLog(h, today, delta, xp, t, userId));
       const r = await awardXp(xp);
       await bumpStreak();
       vibrate(10);
@@ -197,7 +198,7 @@ export default function TodayPage() {
     }
     const xp = xpForHabit(h, 1);
     const t = nowMs();
-    await db().logs.add(stampedLog(h, today, 1, xp, t));
+    await db().logs.add(stampedLog(h, today, 1, xp, t, userId));
     const r = await awardXp(xp);
     await bumpStreak();
     vibrate([20, 30, 40]);
@@ -214,7 +215,7 @@ export default function TodayPage() {
     let log = todays[0];
     if (!log) {
       const t = nowMs();
-      const newLog: Log = stampedLog(h, today, 0, 0, t, []);
+      const newLog: Log = stampedLog(h, today, 0, 0, t, userId, []);
       await db().logs.add(newLog);
       log = newLog;
     }
@@ -423,11 +424,12 @@ function stampedLog(
   value: number,
   xp: number,
   t: number,
+  userId: string,
   steps?: number[]
 ): Log {
   return {
     id: nanoid(),
-    userId: LOCAL_USER_ID,
+    userId,
     habitId: h.id,
     goalId: h.goalId,
     date,

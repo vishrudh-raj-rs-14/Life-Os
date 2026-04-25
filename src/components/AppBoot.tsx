@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useUser } from "@/store/useUser";
 import { startScheduler } from "@/lib/notifications/scheduler";
 import { startSyncLoop } from "@/lib/social/sync";
+import { db } from "@/lib/db/dexie";
+import { getRepo } from "@/lib/repo";
 
 const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
@@ -80,6 +82,29 @@ export function AppBoot() {
     startScheduler(user.tone);
     // Re-attempt subscription in case permission was just granted
     void subscribeToPush();
+  }, [user]);
+
+  // Cloud-first bootstrap: after login, pull core tables from Supabase into Dexie cache.
+  useEffect(() => {
+    if (!user) return;
+    void (async () => {
+      try {
+        const repo = await getRepo();
+        const [habits, logs, sessions, reminders] = await Promise.all([
+          repo.listHabits({ includeArchived: true }),
+          repo.listLogs(),
+          repo.listSessions(),
+          repo.listReminders(),
+        ]);
+        const d = db();
+        await d.habits.bulkPut(habits);
+        await d.logs.bulkPut(logs);
+        await d.sessions.bulkPut(sessions);
+        await d.reminders.bulkPut(reminders);
+      } catch {
+        /* offline / supabase unavailable */
+      }
+    })();
   }, [user]);
 
   return null;

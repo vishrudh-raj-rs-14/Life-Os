@@ -244,9 +244,23 @@ export const STARTER_GOALS: GoalSeed[] = [
 export async function seedStarter(opts: SeedOpts) {
   const repo = await getRepo();
   const t = Date.now();
+  // Cloud-first: prefer Supabase auth uid as the stable per-account user id.
+  // Falls back to LOCAL_USER_ID for offline/local dev.
+  const authUid = await (async () => {
+    try {
+      const { supabaseBrowser } = await import("@/lib/supabase/client");
+      const sb = supabaseBrowser();
+      if (!sb) return undefined;
+      const { data } = await sb.auth.getUser();
+      return data.user?.id ?? undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const userId = authUid ?? LOCAL_USER_ID;
 
   const profile: UserProfile = {
-    userId: LOCAL_USER_ID,
+    userId,
     handle: opts.handle,
     displayName: opts.displayName,
     className: opts.className,
@@ -270,7 +284,7 @@ export async function seedStarter(opts: SeedOpts) {
     const goalId = nanoid();
     await repo.upsertGoal({
       id: goalId,
-      userId: LOCAL_USER_ID,
+      userId,
       title: g.title,
       category: g.category,
       area: g.area,
@@ -290,7 +304,7 @@ export async function seedStarter(opts: SeedOpts) {
     for (const h of g.habits) {
       await repo.upsertHabit({
         id: nanoid(),
-        userId: LOCAL_USER_ID,
+        userId,
         goalId,
         ...h,
         archived: 0,
@@ -301,7 +315,7 @@ export async function seedStarter(opts: SeedOpts) {
     for (const tr of g.trackers ?? []) {
       await repo.upsertTracker({
         id: nanoid(),
-        userId: LOCAL_USER_ID,
+        userId,
         goalId,
         ...tr,
         archived: 0,
@@ -317,10 +331,22 @@ export async function seedStarter(opts: SeedOpts) {
 
 export async function seedVishrudh() {
   const t = Date.now();
+  const authUid = await (async () => {
+    try {
+      const { supabaseBrowser } = await import("@/lib/supabase/client");
+      const sb = supabaseBrowser();
+      if (!sb) return undefined;
+      const { data } = await sb.auth.getUser();
+      return data.user?.id ?? undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const userId = authUid ?? LOCAL_USER_ID;
 
   const habits: Omit<Habit, "id">[] = [
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "Indoor workout",
       kind: "binary",
       target: 1,
@@ -336,7 +362,7 @@ export async function seedVishrudh() {
       updatedAt: t,
     },
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "Outdoor workout",
       kind: "binary",
       target: 1,
@@ -352,7 +378,7 @@ export async function seedVishrudh() {
       updatedAt: t,
     },
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "Daily routine",
       kind: "checklist",
       target: 4,
@@ -369,7 +395,7 @@ export async function seedVishrudh() {
       updatedAt: t,
     },
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "Read tech book",
       kind: "duration",
       target: 60,
@@ -386,7 +412,7 @@ export async function seedVishrudh() {
       updatedAt: t,
     },
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "Self-dev book — 10 pages",
       kind: "count",
       target: 10,
@@ -403,7 +429,7 @@ export async function seedVishrudh() {
       updatedAt: t,
     },
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "Engineering blogs",
       kind: "binary",
       target: 1,
@@ -419,7 +445,7 @@ export async function seedVishrudh() {
       updatedAt: t,
     },
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "LeetCode / CP — 2 problems",
       kind: "count",
       target: 2,
@@ -436,7 +462,7 @@ export async function seedVishrudh() {
       updatedAt: t,
     },
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "Deep work — side project",
       kind: "duration",
       target: 120,
@@ -453,7 +479,7 @@ export async function seedVishrudh() {
       updatedAt: t,
     },
     {
-      userId: LOCAL_USER_ID,
+      userId,
       title: "Wake up early",
       kind: "binary",
       target: 1,

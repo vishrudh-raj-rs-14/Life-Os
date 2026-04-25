@@ -115,6 +115,8 @@ function FocusInner() {
     const result = timer.stop();
     if (!result) return;
     vibrate([15, 30, 15]);
+    const u = useUser.getState().user;
+    const userId = u?.userId ?? LOCAL_USER_ID;
     const goal = goals?.find((g) => g.id === result.goalId);
     const all = await db()
       .sessions.filter((s) => s.goalId === result.goalId && !s.deletedAt)
@@ -124,7 +126,7 @@ function FocusInner() {
     const t = nowMs();
     await db().sessions.add({
       id: nanoid(),
-      userId: LOCAL_USER_ID,
+      userId,
       goalId: result.goalId,
       startedAt: result.startedAt,
       endedAt: result.endedAt,
@@ -155,7 +157,7 @@ function FocusInner() {
       const lt = nowMs();
       await db().logs.add({
         id: nanoid(),
-        userId: LOCAL_USER_ID,
+        userId,
         habitId: h.id,
         goalId: h.goalId,
         date: today,
