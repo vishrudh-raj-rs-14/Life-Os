@@ -43,12 +43,12 @@ export const useUser = create<UserState>((set, get) => ({
   },
   async setUser(u) {
     const repo = await getRepo();
-    await repo.upsertUser(u);
     set({ user: u });
+    await repo.upsertUser(u);
   },
   async awardXp(amount) {
     const repo = await getRepo();
-    const u = (await repo.getUser())!;
+    const u = get().user ?? (await repo.getUser())!;
     const before = levelFromXp(u.totalXp).level;
     const totalXp = u.totalXp + amount;
     const after = levelFromXp(totalXp).level;
@@ -58,13 +58,13 @@ export const useUser = create<UserState>((set, get) => ({
       level: after,
       updatedAt: Date.now(),
     };
-    await repo.upsertUser(updated);
     set({ user: updated });
+    void repo.upsertUser(updated).catch(() => {});
     return { leveledUp: after > before, newLevel: after };
   },
   async bumpStreak() {
     const repo = await getRepo();
-    const u = (await repo.getUser())!;
+    const u = get().user ?? (await repo.getUser())!;
     const today = todayISO();
     if (u.lastActiveDate === today) return;
     const yest = new Date();
@@ -78,8 +78,8 @@ export const useUser = create<UserState>((set, get) => ({
       lastActiveDate: today,
       updatedAt: Date.now(),
     };
-    await repo.upsertUser(updated);
     set({ user: updated });
+    void repo.upsertUser(updated).catch(() => {});
     // ignore returned value to keep type loose; caller can re-read
     void get();
   },
@@ -144,8 +144,8 @@ export const useUser = create<UserState>((set, get) => ({
       dailyBonusXp: desiredBonus > 0 ? desiredBonus : undefined,
       updatedAt: Date.now(),
     };
-    await repo.upsertUser(updated);
     set({ user: updated });
+    void repo.upsertUser(updated).catch(() => {});
     return {
       delta,
       desiredBonus,

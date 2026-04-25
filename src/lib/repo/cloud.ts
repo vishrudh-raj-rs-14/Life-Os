@@ -226,21 +226,21 @@ export class CloudRepository implements Repository {
       const { data: auth } = await sb.auth.getUser();
       const authUserId = auth.user?.id;
       if (authUserId) {
-        // Guard against XP "disappearing" due to stale local state overwriting cloud.
-        // If cloud already has higher total_xp, we never decrease it.
         const { data: existing } = await sb
           .from("user_profile")
-          .select("total_xp, streak_days, streak_freezes, created_at")
+          .select("*")
           .eq("auth_user_id", authUserId)
           .maybeSingle();
 
-        const safe: UserProfile = {
-          ...user,
-          totalXp: Math.max(existing?.total_xp ?? 0, user.totalXp ?? 0),
-          streakDays: Math.max(existing?.streak_days ?? 0, user.streakDays ?? 0),
-          streakFreezes: Math.max(existing?.streak_freezes ?? 0, user.streakFreezes ?? 0),
-          createdAt: existing?.created_at ?? user.createdAt,
-        };
+        // Do not let stale local state overwrite newer cloud rows, but allow
+        // intentional newer updates to decrease XP (undo/reset/daily bonus removal).
+        if (existing?.updated_at && existing.updated_at > (user.updatedAt ?? 0)) {
+          const fresh = mapUserFromRow(existing);
+          await this.local.upsertUser(fresh);
+          return;
+        }
+
+        const safe: UserProfile = { ...user, createdAt: existing?.created_at ?? user.createdAt };
 
         await sb.from("user_profile").upsert(mapUserToRow(safe, authUserId));
         user = safe;
@@ -424,6 +424,25 @@ export class CloudRepository implements Repository {
 
   exportAll = this.local.exportAll.bind(this.local);
   importAll = this.local.importAll.bind(this.local);
-  clearAll = this.local.clearAll.bind(this.local);
+
+  async clearAll(): Promise<void> {
+    const sb = supabaseBrowser();
+    if (sb) {
+      const u = await this.getUser();
+      if (u) {
+        const userId = u.userId;
+        // Delete children before parents to satisfy FK constraints.
+        await sb.from("logs").delete().eq("user_id", userId);
+        await sb.from("sessions").delete().eq("user_id", userId);
+        await sb.from("reminders").delete().eq("user_id", userId);
+        await sb.from("tracker_entries").delete().eq("user_id", userId);
+        await sb.from("trackers").delete().eq("user_id", userId);
+        await sb.from("achievements").delete().eq("user_id", userId);
+        await sb.from("habits").delete().eq("user_id", userId);
+        await sb.from("goals").delete().eq("user_id", userId);
+      }
+    }
+    await this.local.clearAll();
+  }
 }
 

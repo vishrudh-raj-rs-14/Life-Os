@@ -21,6 +21,7 @@ import { ensurePermission } from "@/lib/notifications/scheduler";
 import { getRepo } from "@/lib/repo";
 import { STREAK_THRESHOLD } from "@/lib/engine";
 import type { Tone } from "@/types";
+import { seedVishrudh } from "@/lib/seed";
 
 // ─── Platform detection helpers ──────────────────────────────────────────────
 
@@ -143,6 +144,7 @@ export default function SettingsPage() {
   const [perm, setPerm]           = useState<NotificationPermission>("default");
   const [subscribed, setSubscribed] = useState(false);
   const [cloudUser, setCloudUser] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     void load();
@@ -222,10 +224,35 @@ export default function SettingsPage() {
 
   async function resetAllData() {
     if (!confirm("Delete EVERYTHING and restart from scratch? This cannot be undone.")) return;
-    // destroy the entire IndexedDB — Dexie recreates it fresh on next open
-    const db = (await import("@/lib/db/dexie")).db();
-    await db.delete();
-    window.location.href = "/onboarding";
+    setResetting(true);
+    try {
+      const repo = await getRepo();
+      const { supabaseBrowser } = await import("@/lib/supabase/client");
+      const sb = supabaseBrowser();
+      const { data } = sb ? await sb.auth.getUser() : { data: { user: null } };
+      const email = data.user?.email ?? cloudUser;
+      const shouldSeedVishrudh = email === "vishrudh.shrinivas@gmail.com";
+      const t = Date.now();
+
+      await repo.clearAll();
+      await setUser({
+        ...user!,
+        totalXp: 0,
+        level: 1,
+        streakDays: 0,
+        streakFreezes: 2,
+        lastActiveDate: undefined,
+        dailyBonusDate: undefined,
+        dailyBonusXp: undefined,
+        updatedAt: t,
+      });
+
+      if (shouldSeedVishrudh) await seedVishrudh();
+      await load();
+      window.location.href = "/";
+    } finally {
+      setResetting(false);
+    }
   }
 
   async function exportData() {
@@ -358,6 +385,7 @@ export default function SettingsPage() {
             onClick={resetAllData}
             variant="ghost"
             size="sm"
+            loading={resetting}
             className="text-[var(--danger)] border-[var(--danger)]/30 hover:bg-[var(--danger)]/10"
           >
             <RotateCcw size={13} /> Reset all data

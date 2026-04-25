@@ -2,7 +2,6 @@ import { nanoid } from "nanoid";
 import type { ClassName, Goal, Habit, Tracker, UserProfile } from "@/types";
 import { LOCAL_USER_ID } from "@/lib/utils";
 import { getRepo } from "@/lib/repo";
-import { db } from "@/lib/db/dexie";
 
 interface SeedOpts {
   className: ClassName;
@@ -497,6 +496,6 @@ export async function seedVishrudh() {
   ];
 
   for (const h of habits) {
-    await db().habits.add({ id: nanoid(), ...h });
+    await getRepo().then((repo) => repo.upsertHabit({ id: nanoid(), ...h }));
   }
 }

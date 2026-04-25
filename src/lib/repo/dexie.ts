@@ -250,6 +250,9 @@ export class DexieRepository implements Repository {
       d.nudges.clear(),
       d.trackers.clear(),
       d.trackerEntries.clear(),
+      d.voiceNotes.clear(),
+      d.goalEntries.clear(),
+      d.bodyLogs.clear(),
       d.syncQueue.clear(),
     ]);
   }
