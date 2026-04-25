@@ -300,7 +300,8 @@ export default function TodayPage() {
       <>
       {timer.goalId && timer.startedAt && activeGoal && (
         <div className="px-5">
-          <ActiveTimerCard goal={activeGoal} startedAt={timer.startedAt} />
+          {/* Timer UI reads pause/elapsed from useTimer inside the card */}
+          <ActiveTimerCard goal={activeGoal} />
         </div>
       )}
 
