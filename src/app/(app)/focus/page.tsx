@@ -27,10 +27,8 @@ import {
   vibrate,
 } from "@/lib/utils";
 import {
-  applyCompound,
   isHabitDueToday,
   xpForHabit,
-  xpForSession,
 } from "@/lib/engine";
 import { toast } from "@/components/ui/Toast";
 import { useFocusMediaSession } from "@/hooks/useFocusMediaSession";
@@ -122,8 +120,6 @@ function FocusInner() {
       .sessions.filter((s) => s.goalId === result.goalId && !s.deletedAt)
       .toArray();
     const weeks = all.length >= 3 ? 1 : 0;
-    const baseXp = xpForSession(result.minutes);
-    const xp = applyCompound(baseXp, weeks);
 
     const t = nowMs();
     await db().sessions.add({
@@ -134,7 +130,9 @@ function FocusInner() {
       endedAt: result.endedAt,
       minutes: result.minutes,
       notes: result.notes || undefined,
-      xpAwarded: xp,
+      // Focus sessions are tracked for history, but XP is earned via habit logs
+      // (duration goals) so we don't double-award.
+      xpAwarded: 0,
       createdAt: t,
       updatedAt: t,
     });
@@ -170,12 +168,13 @@ function FocusInner() {
       creditedXp += habitXp;
     }
 
-    const r = await awardXp(xp + creditedXp);
+    // XP is granted only via credited duration habit logs (and manual duration logging).
+    const r = await awardXp(creditedXp);
     await bumpStreak();
 
     toast({
       emoji: r.leveledUp ? "⏶" : "✓",
-      title: r.leveledUp ? `Level ${r.newLevel}` : `+${xp + creditedXp} XP`,
+      title: r.leveledUp ? `Level ${r.newLevel}` : `+${creditedXp} XP`,
       description: `${fmtMinutes(result.minutes)} on ${goal?.title ?? "your goal"}${
         creditedHabitTitle ? ` · credited "${creditedHabitTitle}"` : ""
       }${weeks > 0 ? ` · ${weeks}w combo` : ""}`,
@@ -321,7 +320,7 @@ function FocusInner() {
           >
             <Zap size={14} />
             <span className="text-sm font-medium font-mono">
-              earning ~{xpForSession(Math.max(1, m))} xp
+              focus builds time — XP is credited when you log the duration goal
             </span>
           </motion.div>
         )}
