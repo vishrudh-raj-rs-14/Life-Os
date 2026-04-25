@@ -157,7 +157,9 @@ function mapSessionToRow(s: Session) {
   return {
     id: s.id,
     user_id: s.userId,
-    goal_id: s.goalId ?? null,
+    // Supabase schema still has sessions.goal_id -> goals.id (legacy).
+    // Our app's focus sessions are attached to habits (goals==habits), so avoid FK violations.
+    goal_id: null,
     minutes: s.minutes,
     started_at: s.startedAt,
     ended_at: s.endedAt,
@@ -315,7 +317,20 @@ export class CloudRepository implements Repository {
 
   async upsertLog(log: Log): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) await sb.from("logs").upsert(mapLogToRow(log));
+    if (sb) {
+      // Ensure the referenced habit exists in cloud first (Supabase FK: logs.habit_id -> habits.id).
+      // If the habit was just created locally, log upsert can race and fail.
+      const { data: existingHabit } = await sb
+        .from("habits")
+        .select("id")
+        .eq("id", log.habitId)
+        .maybeSingle();
+      if (!existingHabit) {
+        const h = await this.local.getHabit(log.habitId);
+        if (h) await sb.from("habits").upsert(mapHabitToRow(h));
+      }
+      await sb.from("logs").upsert(mapLogToRow(log));
+    }
     await this.local.upsertLog(log);
   }
 
