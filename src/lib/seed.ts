@@ -3,6 +3,17 @@ import type { ClassName, Goal, Habit, Tracker, UserProfile } from "@/types";
 import { LOCAL_USER_ID } from "@/lib/utils";
 import { getRepo } from "@/lib/repo";
 
+const VISHRUDH_SEED_EMAILS = new Set([
+  "vishrudh.shrinivas@gmail.com",
+  "vishrudh.shrinvias@gmail.com",
+]);
+
+export function shouldSeedVishrudhProfile(email?: string | null, handle?: string | null) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  const normalizedHandle = handle?.trim().toLowerCase();
+  return normalizedHandle === "vishrudh" || (normalizedEmail ? VISHRUDH_SEED_EMAILS.has(normalizedEmail) : false);
+}
+
 interface SeedOpts {
   className: ClassName;
   handle: string;

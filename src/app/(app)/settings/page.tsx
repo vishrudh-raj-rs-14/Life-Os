@@ -21,7 +21,7 @@ import { ensurePermission } from "@/lib/notifications/scheduler";
 import { getRepo } from "@/lib/repo";
 import { STREAK_THRESHOLD } from "@/lib/engine";
 import type { Tone } from "@/types";
-import { seedVishrudh } from "@/lib/seed";
+import { seedVishrudh, shouldSeedVishrudhProfile } from "@/lib/seed";
 
 // ─── Platform detection helpers ──────────────────────────────────────────────
 
@@ -231,7 +231,7 @@ export default function SettingsPage() {
       const sb = supabaseBrowser();
       const { data } = sb ? await sb.auth.getUser() : { data: { user: null } };
       const email = data.user?.email ?? cloudUser;
-      const shouldSeedVishrudh = email === "vishrudh.shrinivas@gmail.com";
+      const shouldSeedVishrudh = shouldSeedVishrudhProfile(email, user?.handle);
       const t = Date.now();
 
       await repo.clearAll();

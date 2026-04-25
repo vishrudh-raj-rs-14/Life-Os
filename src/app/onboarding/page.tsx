@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
-import { seedStarter, seedVishrudh } from "@/lib/seed";
+import { seedStarter, seedVishrudh, shouldSeedVishrudhProfile } from "@/lib/seed";
 import { useUser } from "@/store/useUser";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -101,14 +101,13 @@ export default function OnboardingPage() {
         tone,
         selectedGoalKeys: [],
       });
-      // Seed personal goals when the handle is "vishrudh" OR the Google
-      // account is vishrudh.shrinivas@gmail.com
+      // Seed personal goals for Vishrudh's account/handle.
       let googleEmail = "";
       if (sb) {
         const { data } = await sb.auth.getUser();
         googleEmail = data.user?.email ?? "";
       }
-      if (h === "vishrudh" || googleEmail === "vishrudh.shrinivas@gmail.com") {
+      if (shouldSeedVishrudhProfile(googleEmail, h)) {
         await seedVishrudh();
       }
       await useUser.getState().load();
