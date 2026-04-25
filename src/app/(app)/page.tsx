@@ -40,6 +40,7 @@ export default function TodayPage() {
   // Optimistic done state: habitId → true while the DB write is in-flight
   const [optimisticDone, setOptimisticDone] = useState<Record<string, boolean>>({});
   const habitQueues = useRef<Record<string, Promise<void>>>({});
+  const logSyncTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
     timer.hydrate();
@@ -144,6 +145,27 @@ export default function TodayPage() {
     return cleanup;
   }
 
+  function scheduleLogSync(logId: string) {
+    const existing = logSyncTimers.current[logId];
+    if (existing) clearTimeout(existing);
+
+    logSyncTimers.current[logId] = setTimeout(() => {
+      delete logSyncTimers.current[logId];
+      void (async () => {
+        const latest = await db().logs.get(logId);
+        if (!latest) return;
+        const repo = await getRepo();
+        await repo.upsertLog(latest);
+      })().catch(() => {});
+    }, 700);
+  }
+
+  function cancelLogSync(logId: string) {
+    const existing = logSyncTimers.current[logId];
+    if (existing) clearTimeout(existing);
+    delete logSyncTimers.current[logId];
+  }
+
   const completedCount = dueHabits.filter((h) => {
     const { done } = habitDoneToday(h, todayLogs ?? [], today);
     return done;
@@ -159,8 +181,7 @@ export default function TodayPage() {
       const t = nowMs();
       const log = stampedLog(h, today, delta, xp, t, userId);
       await db().logs.add(log);
-      // Cloud-first: upsert to Supabase
-      void getRepo().then((r) => r.upsertLog(log)).catch(() => {});
+      scheduleLogSync(log.id);
       const r = await awardXp(xp);
       await bumpStreak();
       vibrate(10);
@@ -179,6 +200,7 @@ export default function TodayPage() {
         if (l.value <= remaining) {
           remaining -= l.value;
           xpToRefund += l.xpAwarded ?? 0;
+          cancelLogSync(l.id);
           await db().logs.delete(l.id);
           void getRepo().then((r) => r.deleteLog(l.id)).catch(() => {});
         } else {
@@ -192,7 +214,7 @@ export default function TodayPage() {
             updatedAt: nowMs(),
           });
           const updatedRow = await db().logs.get(l.id);
-          if (updatedRow) void getRepo().then((r) => r.upsertLog(updatedRow)).catch(() => {});
+          if (updatedRow) scheduleLogSync(updatedRow.id);
           remaining = 0;
         }
       }
@@ -210,6 +232,7 @@ export default function TodayPage() {
     if (done) {
       const todays = freshTodayLogs.filter((l) => l.habitId === h.id);
       for (const l of todays) {
+        cancelLogSync(l.id);
         await db().logs.delete(l.id);
         void getRepo().then((r) => r.deleteLog(l.id)).catch(() => {});
         if (l.xpAwarded) await awardXp(-l.xpAwarded);
@@ -222,7 +245,7 @@ export default function TodayPage() {
     const t = nowMs();
     const log = stampedLog(h, today, 1, xp, t, userId);
     await db().logs.add(log);
-    void getRepo().then((r) => r.upsertLog(log)).catch(() => {});
+    scheduleLogSync(log.id);
     const r = await awardXp(xp);
     await bumpStreak();
     vibrate([20, 30, 40]);
@@ -243,7 +266,6 @@ export default function TodayPage() {
       const t = nowMs();
       const newLog: Log = stampedLog(h, today, 0, 0, t, userId, []);
       await db().logs.add(newLog);
-      void getRepo().then((r) => r.upsertLog(newLog)).catch(() => {});
       log = newLog;
     }
 
@@ -262,8 +284,9 @@ export default function TodayPage() {
     });
     // Read back and upsert the updated row to cloud
     const updatedRow = await db().logs.get(log.id);
-    if (updatedRow) void getRepo().then((r) => r.upsertLog(updatedRow)).catch(() => {});
+    if (updatedRow) scheduleLogSync(updatedRow.id);
     for (const extra of todays.slice(1)) {
+      cancelLogSync(extra.id);
       await db().logs.delete(extra.id);
       void getRepo().then((r) => r.deleteLog(extra.id)).catch(() => {});
     }

@@ -11,6 +11,18 @@ import {
 } from "@/lib/engine";
 import { todayISO } from "@/lib/utils";
 
+let profileSyncTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleProfileSync(user: UserProfile) {
+  if (profileSyncTimer) clearTimeout(profileSyncTimer);
+  profileSyncTimer = setTimeout(() => {
+    profileSyncTimer = undefined;
+    void getRepo()
+      .then((repo) => repo.upsertUser(user))
+      .catch(() => {});
+  }, 700);
+}
+
 interface UserState {
   user?: UserProfile;
   loading: boolean;
@@ -47,8 +59,8 @@ export const useUser = create<UserState>((set, get) => ({
     await repo.upsertUser(u);
   },
   async awardXp(amount) {
-    const repo = await getRepo();
-    const u = get().user ?? (await repo.getUser())!;
+    const repo = get().user ? undefined : await getRepo();
+    const u = get().user ?? (await repo!.getUser())!;
     const before = levelFromXp(u.totalXp).level;
     const totalXp = u.totalXp + amount;
     const after = levelFromXp(totalXp).level;
@@ -59,12 +71,12 @@ export const useUser = create<UserState>((set, get) => ({
       updatedAt: Date.now(),
     };
     set({ user: updated });
-    void repo.upsertUser(updated).catch(() => {});
+    scheduleProfileSync(updated);
     return { leveledUp: after > before, newLevel: after };
   },
   async bumpStreak() {
-    const repo = await getRepo();
-    const u = get().user ?? (await repo.getUser())!;
+    const repo = get().user ? undefined : await getRepo();
+    const u = get().user ?? (await repo!.getUser())!;
     const today = todayISO();
     if (u.lastActiveDate === today) return;
     const yest = new Date();
@@ -79,13 +91,13 @@ export const useUser = create<UserState>((set, get) => ({
       updatedAt: Date.now(),
     };
     set({ user: updated });
-    void repo.upsertUser(updated).catch(() => {});
+    scheduleProfileSync(updated);
     // ignore returned value to keep type loose; caller can re-read
     void get();
   },
   async syncDailyXpBonus(today, dueHabits, todayLogs) {
-    const repo = await getRepo();
-    let u = await repo.getUser();
+    const repo = get().user ? undefined : await getRepo();
+    let u = get().user ?? (await repo!.getUser());
     if (!u) {
       return {
         delta: 0,
@@ -109,8 +121,8 @@ export const useUser = create<UserState>((set, get) => ({
         dailyBonusXp: undefined,
         updatedAt: Date.now(),
       };
-      await repo.upsertUser(u);
       set({ user: u });
+      scheduleProfileSync(u);
     }
 
     const tracked =
@@ -145,7 +157,7 @@ export const useUser = create<UserState>((set, get) => ({
       updatedAt: Date.now(),
     };
     set({ user: updated });
-    void repo.upsertUser(updated).catch(() => {});
+    scheduleProfileSync(updated);
     return {
       delta,
       desiredBonus,

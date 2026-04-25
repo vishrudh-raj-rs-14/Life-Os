@@ -15,6 +15,10 @@ function isRemoteNewer<T extends { updatedAt?: number }>(remote: T, local?: T) {
   return !local || (local.updatedAt ?? 0) <= (remote.updatedAt ?? 0);
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function mapUserFromRow(r: any): UserProfile {
   return {
     userId: r.id,
@@ -227,10 +231,8 @@ export class CloudRepository implements Repository {
 
   async upsertUser(user: UserProfile): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) {
-      const { data: auth } = await sb.auth.getUser();
-      const authUserId = auth.user?.id;
-      if (authUserId) {
+    if (sb && isUuid(user.userId)) {
+      const authUserId = user.userId;
         const { data: existing } = await sb
           .from("user_profile")
           .select("*")
@@ -249,7 +251,6 @@ export class CloudRepository implements Repository {
 
         await sb.from("user_profile").upsert(mapUserToRow(safe, authUserId));
         user = safe;
-      }
     }
     await this.local.upsertUser(user);
   }

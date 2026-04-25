@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useUser } from "@/store/useUser";
 import { startScheduler } from "@/lib/notifications/scheduler";
 import { startSyncLoop } from "@/lib/social/sync";
@@ -45,6 +45,7 @@ async function subscribeToPush() {
 
 export function AppBoot() {
   const user = useUser((s) => s.user);
+  const bootstrappedUserId = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -87,6 +88,8 @@ export function AppBoot() {
   // Cloud-first bootstrap: after login, pull core tables from Supabase into Dexie cache.
   useEffect(() => {
     if (!user) return;
+    if (bootstrappedUserId.current === user.userId) return;
+    bootstrappedUserId.current = user.userId;
     void (async () => {
       try {
         const repo = await getRepo();
@@ -116,10 +119,11 @@ export function AppBoot() {
           if (!local || (local.updatedAt ?? 0) <= (r.updatedAt ?? 0)) await d.reminders.put(r);
         }
       } catch {
+        bootstrappedUserId.current = null;
         /* offline / supabase unavailable */
       }
     })();
-  }, [user]);
+  }, [user?.userId]);
 
   return null;
 }
