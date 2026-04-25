@@ -27,6 +27,7 @@ import { nowMs, todayISO, vibrate } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { SkeletonCard } from "@/components/ui/Skeleton";
+import { getRepo } from "@/lib/repo";
 
 type Tab = "today" | "goals";
 
@@ -143,7 +144,10 @@ export default function TodayPage() {
     if (delta > 0) {
       const xp = xpForHabit(h, delta);
       const t = nowMs();
-      await db().logs.add(stampedLog(h, today, delta, xp, t, userId));
+      const log = stampedLog(h, today, delta, xp, t, userId);
+      await db().logs.add(log);
+      // Cloud-first: upsert to Supabase
+      void getRepo().then((r) => r.upsertLog(log)).catch(() => {});
       const r = await awardXp(xp);
       await bumpStreak();
       vibrate(10);
@@ -163,6 +167,7 @@ export default function TodayPage() {
           remaining -= l.value;
           xpToRefund += l.xpAwarded ?? 0;
           await db().logs.delete(l.id);
+          void getRepo().then((r) => r.deleteLog(l.id)).catch(() => {});
         } else {
           // partial: split xp proportionally
           const newValue = l.value - remaining;
@@ -173,6 +178,8 @@ export default function TodayPage() {
             xpAwarded: (l.xpAwarded ?? 0) - refund,
             updatedAt: nowMs(),
           });
+          const updatedRow = await db().logs.get(l.id);
+          if (updatedRow) void getRepo().then((r) => r.upsertLog(updatedRow)).catch(() => {});
           remaining = 0;
         }
       }
@@ -190,6 +197,7 @@ export default function TodayPage() {
       const todays = (todayLogs ?? []).filter((l) => l.habitId === h.id);
       for (const l of todays) {
         await db().logs.delete(l.id);
+        void getRepo().then((r) => r.deleteLog(l.id)).catch(() => {});
         if (l.xpAwarded) await awardXp(-l.xpAwarded);
       }
       vibrate(10);
@@ -198,7 +206,9 @@ export default function TodayPage() {
     }
     const xp = xpForHabit(h, 1);
     const t = nowMs();
-    await db().logs.add(stampedLog(h, today, 1, xp, t, userId));
+    const log = stampedLog(h, today, 1, xp, t, userId);
+    await db().logs.add(log);
+    void getRepo().then((r) => r.upsertLog(log)).catch(() => {});
     const r = await awardXp(xp);
     await bumpStreak();
     vibrate([20, 30, 40]);
@@ -217,6 +227,7 @@ export default function TodayPage() {
       const t = nowMs();
       const newLog: Log = stampedLog(h, today, 0, 0, t, userId, []);
       await db().logs.add(newLog);
+      void getRepo().then((r) => r.upsertLog(newLog)).catch(() => {});
       log = newLog;
     }
     const set = new Set(log.steps ?? []);
@@ -232,6 +243,9 @@ export default function TodayPage() {
       xpAwarded: xp,
       updatedAt: nowMs(),
     });
+    // Read back and upsert the updated row to cloud
+    const updatedRow = await db().logs.get(log.id);
+    if (updatedRow) void getRepo().then((r) => r.upsertLog(updatedRow)).catch(() => {});
     const diff = xp - previousXp;
     if (diff !== 0) await awardXp(diff);
     if (value >= h.target) await bumpStreak();

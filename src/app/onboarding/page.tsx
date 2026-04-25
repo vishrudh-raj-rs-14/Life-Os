@@ -86,11 +86,8 @@ export default function OnboardingPage() {
             display_name: name.trim(),
             class_name: "polymath",
             tone,
-            total_xp: 0,
-            streak_days: 0,
-            streak_freezes: 2,
-            is_public: 0,
-            created_at: Date.now(),
+            // Don't overwrite progress fields if the user is re-onboarding / retrying.
+            // (Supabase defaults handle the initial values on first insert.)
             updated_at: Date.now(),
           });
         }

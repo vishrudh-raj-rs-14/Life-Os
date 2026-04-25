@@ -32,6 +32,7 @@ import {
 } from "@/lib/engine";
 import { toast } from "@/components/ui/Toast";
 import { useFocusMediaSession } from "@/hooks/useFocusMediaSession";
+import { getRepo } from "@/lib/repo";
 
 const PRESETS = [25, 45, 60, 90];
 
@@ -124,7 +125,7 @@ function FocusInner() {
     const weeks = all.length >= 3 ? 1 : 0;
 
     const t = nowMs();
-    await db().sessions.add({
+    const sessionRow = {
       id: nanoid(),
       userId,
       goalId: result.goalId,
@@ -137,7 +138,9 @@ function FocusInner() {
       xpAwarded: 0,
       createdAt: t,
       updatedAt: t,
-    });
+    };
+    await db().sessions.add(sessionRow);
+    void getRepo().then((r) => r.upsertSession(sessionRow)).catch(() => {});
 
     let creditedHabitTitle: string | undefined;
     let creditedXp = 0;
@@ -155,7 +158,7 @@ function FocusInner() {
       if (!isHabitDueToday(h)) continue;
       const habitXp = xpForHabit(h, result.minutes);
       const lt = nowMs();
-      await db().logs.add({
+      const logRow = {
         id: nanoid(),
         userId,
         habitId: h.id,
@@ -165,7 +168,9 @@ function FocusInner() {
         xpAwarded: habitXp,
         createdAt: lt,
         updatedAt: lt,
-      });
+      };
+      await db().logs.add(logRow);
+      void getRepo().then((r) => r.upsertLog(logRow)).catch(() => {});
       creditedHabitTitle = h.title;
       creditedXp += habitXp;
     }

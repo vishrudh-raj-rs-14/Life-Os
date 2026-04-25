@@ -223,7 +223,26 @@ export class CloudRepository implements Repository {
     if (sb) {
       const { data: auth } = await sb.auth.getUser();
       const authUserId = auth.user?.id;
-      if (authUserId) await sb.from("user_profile").upsert(mapUserToRow(user, authUserId));
+      if (authUserId) {
+        // Guard against XP "disappearing" due to stale local state overwriting cloud.
+        // If cloud already has higher total_xp, we never decrease it.
+        const { data: existing } = await sb
+          .from("user_profile")
+          .select("total_xp, streak_days, streak_freezes, created_at")
+          .eq("auth_user_id", authUserId)
+          .maybeSingle();
+
+        const safe: UserProfile = {
+          ...user,
+          totalXp: Math.max(existing?.total_xp ?? 0, user.totalXp ?? 0),
+          streakDays: Math.max(existing?.streak_days ?? 0, user.streakDays ?? 0),
+          streakFreezes: Math.max(existing?.streak_freezes ?? 0, user.streakFreezes ?? 0),
+          createdAt: existing?.created_at ?? user.createdAt,
+        };
+
+        await sb.from("user_profile").upsert(mapUserToRow(safe, authUserId));
+        user = safe;
+      }
     }
     await this.local.upsertUser(user);
   }

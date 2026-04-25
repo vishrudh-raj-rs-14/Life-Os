@@ -11,6 +11,7 @@ import { Input, Label } from "@/components/ui/Input";
 import { DayPicker } from "@/components/ui/DayPicker";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/store/useUser";
+import { getRepo } from "@/lib/repo";
 import type { Cadence, Difficulty, HabitKind, LifeArea, TargetMode } from "@/types";
 
 const COLORS = [
@@ -101,7 +102,7 @@ export default function NewGoalPage() {
     const finalCustomDays = cadence === "daily" ? undefined : customDays;
 
     const userId = user?.userId ?? "local-user";
-    await db().habits.add({
+    const habitRow: import("@/types").Habit = {
       id,
       userId,
       title: title.trim(),
@@ -118,22 +119,26 @@ export default function NewGoalPage() {
       difficulty,
       weeklyTarget,
       area,
-      archived: 0,
+      archived: 0 as 0,
       createdAt: t,
       updatedAt: t,
-    });
+    };
+    await db().habits.add(habitRow);
+    void getRepo().then((r) => r.upsertHabit(habitRow)).catch(() => {});
 
     if (time) {
-      await db().reminders.put({
+      const reminderRow: import("@/types").Reminder = {
         id: nanoid(),
         userId,
         habitId: id,
         time,
         tone: "coach",
-        enabled: 1,
+        enabled: 1 as 1,
         createdAt: t,
         updatedAt: t,
-      });
+      };
+      await db().reminders.put(reminderRow);
+      void getRepo().then((r) => r.upsertReminder(reminderRow)).catch(() => {});
       // Sync reminder to Supabase so backend cron can send push when app is closed
       const { syncReminder } = await import("@/lib/notifications/syncReminder");
       await syncReminder({
