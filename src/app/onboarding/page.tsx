@@ -88,6 +88,7 @@ export default function OnboardingPage() {
             tone,
             // Don't overwrite progress fields if the user is re-onboarding / retrying.
             // (Supabase defaults handle the initial values on first insert.)
+            created_at: Date.now(),
             updated_at: Date.now(),
           });
           if (upsertErr) throw upsertErr;
