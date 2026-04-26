@@ -16,10 +16,13 @@ import {
 } from "recharts";
 import { Camera, TrendingDown, TrendingUp, Minus, Trash2, X } from "lucide-react";
 import { db } from "@/lib/db/dexie";
+import { getRepo } from "@/lib/repo";
+import { useSignedMediaUrl } from "@/lib/media/useSignedMediaUrl";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
-import { LOCAL_USER_ID, cn, todayISO } from "@/lib/utils";
+import { cn, todayISO } from "@/lib/utils";
 import type { BodyLog } from "@/types";
+import { useUser } from "@/store/useUser";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -36,7 +39,7 @@ function usePhotoUrl(blob?: Blob) {
 
 // ─── Add entry form ───────────────────────────────────────────────────────────
 
-function AddEntry({ onSaved }: { onSaved: () => void }) {
+function AddEntry({ userId, onSaved }: { userId: string; onSaved: () => void }) {
   const [weight, setWeight] = useState("");
   const [notes,  setNotes]  = useState("");
   const [photo,  setPhoto]  = useState<File | null>(null);
@@ -47,29 +50,34 @@ function AddEntry({ onSaved }: { onSaved: () => void }) {
   async function save() {
     if (!weight && !photo) return;
     setSaving(true);
-    // upsert by date — one log per day
+    const repo = await getRepo();
     const existing = await db().bodyLogs
       .where("date").equals(today)
-      .filter(l => l.userId === LOCAL_USER_ID)
+      .filter((l) => l.userId === userId)
       .first();
 
+    const t = Date.now();
     const data: Partial<BodyLog> = {
       weight: weight ? parseFloat(weight) : undefined,
       notes: notes || undefined,
       blob: photo ?? undefined,
       mimeType: photo?.type,
-      updatedAt: Date.now(),
+      updatedAt: t,
     };
     if (existing) {
-      await db().bodyLogs.update(existing.id, data);
+      await repo.upsertBodyLog({
+        ...existing,
+        ...data,
+        updatedAt: t,
+      } as BodyLog);
     } else {
-      await db().bodyLogs.add({
+      await repo.upsertBodyLog({
         id: nanoid(),
-        userId: LOCAL_USER_ID,
+        userId,
         date: today,
         ...data,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: t,
+        updatedAt: t,
       } as BodyLog);
     }
     setWeight(""); setNotes(""); setPhoto(null);
@@ -124,7 +132,9 @@ function AddEntry({ onSaved }: { onSaved: () => void }) {
 // ─── Photo thumbnail ──────────────────────────────────────────────────────────
 
 function PhotoThumb({ log, onDelete }: { log: BodyLog; onDelete: () => void }) {
-  const url = usePhotoUrl(log.blob);
+  const blobUrl = usePhotoUrl(log.blob);
+  const signedUrl = useSignedMediaUrl(!log.blob && log.photoStorageKey ? log.photoStorageKey : undefined);
+  const url = blobUrl || signedUrl;
   const [big, setBig] = useState(false);
 
   return (
@@ -181,17 +191,32 @@ function BodySkeleton() {
 }
 
 export default function BodyPage() {
+  const { user } = useUser();
   const [refresh, setRefresh] = useState(0);
 
   const logs = useLiveQuery(
-    () =>
-      db()
+    () => {
+      if (!user?.userId) return Promise.resolve([] as BodyLog[]);
+      return db()
         .bodyLogs.where("userId")
-        .equals(LOCAL_USER_ID)
-        .reverse()
-        .sortBy("date"),
-    [refresh]
+        .equals(user.userId)
+        .toArray()
+        .then((rows) => rows.sort((a, b) => b.date.localeCompare(a.date)));
+    },
+    [refresh, user?.userId]
   );
+
+  useEffect(() => {
+    if (!user?.userId) return;
+    void (async () => {
+      try {
+        const repo = await getRepo();
+        await repo.listBodyLogs();
+      } catch {
+        /* offline */
+      }
+    })();
+  }, [user?.userId]);
 
   // Chart data — last 60 days with weight entries
   const chartData = useMemo(() => {
@@ -216,15 +241,16 @@ export default function BodyPage() {
   }, [logs]);
 
   const photos = useMemo(
-    () => (logs ?? []).filter(l => l.blob).slice(0, 30),
+    () => (logs ?? []).filter((l) => l.blob || l.photoStorageKey).slice(0, 30),
     [logs]
   );
 
   async function deleteLog(id: string) {
-    await db().bodyLogs.delete(id);
+    const repo = await getRepo();
+    await repo.deleteBodyLog(id);
   }
 
-  if (logs === undefined) return <BodySkeleton />;
+  if (!user || logs === undefined) return <BodySkeleton />;
 
   return (
     <div className="px-5 pt-6 pb-10 space-y-6">
@@ -236,7 +262,7 @@ export default function BodyPage() {
 
       {/* log today */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-        <AddEntry onSaved={() => setRefresh(r => r + 1)} />
+        <AddEntry userId={user.userId} onSaved={() => setRefresh((r) => r + 1)} />
       </motion.div>
 
       {/* current stats */}
@@ -335,7 +361,9 @@ export default function BodyPage() {
                   {log.weight && (
                     <span className="text-[var(--ink-1)] font-mono">{log.weight} kg</span>
                   )}
-                  {log.blob && <Camera size={12} className="text-[var(--accent)]" />}
+                  {(log.blob || log.photoStorageKey) && (
+                    <Camera size={12} className="text-[var(--accent)]" />
+                  )}
                 </div>
                 <button onClick={() => deleteLog(log.id)}
                   className="text-[var(--ink-3)] hover:text-[var(--danger)] transition">

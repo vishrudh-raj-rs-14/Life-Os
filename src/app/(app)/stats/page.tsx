@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
+import { useUser } from "@/store/useUser";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { motion } from "framer-motion";
@@ -19,9 +20,19 @@ import { addDays, addWeeks, startOfWeek } from "date-fns";
 import { TrendingUp, TrendingDown, Minus, ArrowLeft } from "lucide-react";
 import { SkeletonPage } from "@/components/ui/Skeleton";
 import { db } from "@/lib/db/dexie";
-import { habitDoneToday, isHabitDueToday } from "@/lib/engine";
 import { cn } from "@/lib/utils";
-import type { Habit, LifeArea } from "@/types";
+import type { BodyLog, Habit, LifeArea } from "@/types";
+import {
+  areaBreakdownThisMonth,
+  averageWeeklyCompletion,
+  bestTimeOfDayBucket,
+  heatmap90Days,
+  heatmapGridCells,
+  streakInsights,
+  type HeatmapDay,
+  weekCompletionPct,
+  xpThisCalendarMonth,
+} from "@/lib/stats/insights";
 
 const AREA_META: Record<LifeArea, { label: string; color: string }> = {
   career:        { label: "Career",        color: "#C9A96E" },
@@ -33,32 +44,17 @@ const AREA_META: Record<LifeArea, { label: string; color: string }> = {
   lifestyle:     { label: "Lifestyle",     color: "#6EC9C9" },
 };
 
-// Compute completion ratio for a single week
-function weekScore(habits: Habit[], logs: import("@/types").Log[], weekStart: Date) {
-  let due = 0, done = 0;
-  for (const h of habits) {
-    for (let i = 0; i < 7; i++) {
-      const d = addDays(weekStart, i);
-      if (d > new Date()) break;
-      if (!isHabitDueToday(h, d)) continue;
-      due++;
-      const ds = d.toISOString().slice(0, 10);
-      if (habitDoneToday(h, logs, ds).done) done++;
-    }
-  }
-  return due > 0 ? Math.round((done / due) * 100) : 0;
-}
-
 function areaScores(
   habits: Habit[],
   logs: import("@/types").Log[],
   weekStart: Date,
-  prevWeekStart: Date
+  prevWeekStart: Date,
+  asOf: Date
 ): Array<{ area: LifeArea; label: string; color: string; thisWeek: number; lastWeek: number; delta: number }> {
   return (Object.keys(AREA_META) as LifeArea[]).map(area => {
     const aHabits = habits.filter(h => (h as Habit & { area?: LifeArea }).area === area);
-    const tw = weekScore(aHabits, logs, weekStart);
-    const lw = weekScore(aHabits, logs, prevWeekStart);
+    const tw = weekCompletionPct(aHabits, logs, weekStart, asOf);
+    const lw = weekCompletionPct(aHabits, logs, prevWeekStart, asOf);
     return {
       area,
       ...AREA_META[area],
@@ -69,7 +65,7 @@ function areaScores(
   }).filter(r => r.thisWeek > 0 || r.lastWeek > 0);
 }
 
-const tooltipStyle: React.CSSProperties = {
+const tooltipStyle: CSSProperties = {
   background: "var(--surface)",
   border: "1px solid var(--border)",
   borderRadius: 8,
@@ -77,15 +73,46 @@ const tooltipStyle: React.CSSProperties = {
   color: "var(--ink-1)",
 };
 
+const ROW_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] as const;
+
+function heatCellStyle(level: number): CSSProperties {
+  if (level < 0) {
+    return {
+      background: "var(--surface-2)",
+      border: "1px solid var(--border)",
+    };
+  }
+  const opacity = 0.2 + level * 0.16;
+  return {
+    background: "var(--accent)",
+    opacity,
+    border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)",
+  };
+}
+
+function heatCellTitle(cell: HeatmapDay | null): string {
+  if (!cell) return "";
+  if (cell.level < 0) return `${cell.date} — no habits due`;
+  const pct = cell.ratio != null ? Math.round(cell.ratio * 100) : 0;
+  return `${cell.date} — ${cell.done}/${cell.due} done (${pct}%)`;
+}
+
 export default function StatsPage() {
+  const user = useUser((s) => s.user);
   const habits = useLiveQuery(
     () => db().habits.filter(h => !h.archived && !h.deletedAt).toArray(), []
   );
   const logs = useLiveQuery(() => db().logs.toArray(), []);
   const bodyLogs = useLiveQuery(
-    () => db().bodyLogs.where("userId").equals("local-user")
-      .reverse().sortBy("date"),
-    []
+    () => {
+      if (!user?.userId) return Promise.resolve([] as BodyLog[]);
+      return db()
+        .bodyLogs.where("userId")
+        .equals(user.userId)
+        .toArray()
+        .then((rows) => rows.sort((a, b) => b.date.localeCompare(a.date)));
+    },
+    [user?.userId]
   );
 
   const today       = new Date();
@@ -97,17 +124,53 @@ export default function StatsPage() {
     if (!habits || !logs) return [];
     return Array.from({ length: 8 }).map((_, i) => {
       const ws = addWeeks(weekStart, -7 + i);
-      const score = weekScore(habits, logs, ws);
+      const score = weekCompletionPct(habits, logs, ws, today);
       const label = ws.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
       return { label, score };
     });
-  }, [habits, logs, weekStart]);
+  }, [habits, logs, weekStart, today]);
 
   // Per-area scores this week vs last
   const areas = useMemo(() => {
     if (!habits || !logs) return [];
-    return areaScores(habits, logs, weekStart, prevWeek);
-  }, [habits, logs, weekStart, prevWeek]);
+    return areaScores(habits, logs, weekStart, prevWeek, today);
+  }, [habits, logs, weekStart, prevWeek, today]);
+
+  const heatmapCells = useMemo(() => {
+    if (!habits || !logs) return [];
+    return heatmapGridCells(heatmap90Days(habits, logs, today));
+  }, [habits, logs, today]);
+
+  const streaks = useMemo(() => {
+    if (!habits || !logs) return { currentStreak: 0, bestStreak: 0 };
+    return streakInsights(habits, logs, today);
+  }, [habits, logs, today]);
+
+  const weeklyAvg4 = useMemo(() => {
+    if (!habits || !logs) return 0;
+    return averageWeeklyCompletion(habits, logs, today, 4);
+  }, [habits, logs, today]);
+
+  const xpMonth = useMemo(() => {
+    if (!logs) return 0;
+    return xpThisCalendarMonth(logs, today);
+  }, [logs, today]);
+
+  const timeOfDay = useMemo(() => {
+    if (!logs) return { primary: null as ReturnType<typeof bestTimeOfDayBucket>["primary"], secondary: null };
+    return bestTimeOfDayBucket(logs, today, 90);
+  }, [logs, today]);
+
+  const areaMonthXp = useMemo(() => {
+    if (!habits || !logs) return [];
+    return areaBreakdownThisMonth(
+      habits,
+      logs,
+      (a) => AREA_META[a].label,
+      (a) => AREA_META[a].color,
+      today
+    );
+  }, [habits, logs, today]);
 
   // Radar data
   const radarData = useMemo(() =>
@@ -118,12 +181,12 @@ export default function StatsPage() {
   // Overall this week
   const overallThis = useMemo(() => {
     if (!habits || !logs) return 0;
-    return weekScore(habits, logs, weekStart);
-  }, [habits, logs, weekStart]);
+    return weekCompletionPct(habits, logs, weekStart, today);
+  }, [habits, logs, weekStart, today]);
   const overallLast = useMemo(() => {
     if (!habits || !logs) return 0;
-    return weekScore(habits, logs, prevWeek);
-  }, [habits, logs, prevWeek]);
+    return weekCompletionPct(habits, logs, prevWeek, today);
+  }, [habits, logs, prevWeek, today]);
   const overallDelta = overallThis - overallLast;
 
   if (habits === undefined || logs === undefined) return <SkeletonPage cards={6} />;
@@ -139,6 +202,132 @@ export default function StatsPage() {
           <div className="os-label">Performance</div>
         </div>
         <h1 className="serif text-3xl text-[var(--ink-1)]">Stats</h1>
+      </motion.div>
+
+      {/* 90-day heatmap + KPIs + monthly area XP */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.02 }}
+        className="space-y-4"
+      >
+        <div>
+          <div className="os-label mb-2">Consistency · 90 days</div>
+          <div className="os-block p-3">
+            <div className="flex gap-2">
+              <div className="flex flex-col gap-[3px] shrink-0 w-[18px] text-[8px] font-mono text-[var(--ink-3)] leading-none pt-px">
+                {ROW_LABELS.map((lb) => (
+                  <div key={lb} className="h-[10px] flex items-center justify-end pr-0.5">
+                    {lb}
+                  </div>
+                ))}
+              </div>
+              <div className="overflow-x-auto min-w-0 flex-1">
+                <div className="flex gap-[3px] min-w-max">
+                  {Array.from({ length: Math.max(1, Math.ceil(heatmapCells.length / 7)) }).map((_, col) => (
+                    <div key={col} className="flex flex-col gap-[3px] shrink-0">
+                      {Array.from({ length: 7 }).map((_, row) => {
+                        const idx = col * 7 + row;
+                        const cell = heatmapCells[idx] ?? null;
+                        const lvl = cell?.level ?? -1;
+                        return (
+                          <div
+                            key={row}
+                            title={heatCellTitle(cell)}
+                            className="w-[10px] h-[10px] rounded-[2px] shrink-0 box-border"
+                            style={heatCellStyle(lvl)}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <p className="text-[9px] font-mono text-[var(--ink-3)] mt-2 flex justify-between">
+              <span>Older</span>
+              <span>Newer</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="os-block p-3">
+            <div className="os-label mb-1">Current streak</div>
+            <div className="text-2xl font-mono text-[var(--ink-1)]">{streaks.currentStreak}d</div>
+            <div className="text-[10px] text-[var(--ink-3)] mt-1">Days with ≥50% of due habits done</div>
+          </div>
+          <div className="os-block p-3">
+            <div className="os-label mb-1">Best streak</div>
+            <div className="text-2xl font-mono text-[var(--accent)]">{streaks.bestStreak}d</div>
+          </div>
+          <div className="os-block p-3">
+            <div className="os-label mb-1">Weekly completion</div>
+            <div className="text-2xl font-mono text-[var(--ink-1)]">{weeklyAvg4}%</div>
+            <div className="text-[10px] text-[var(--ink-3)] mt-1">Avg last 4 ISO weeks</div>
+          </div>
+          <div className="os-block p-3">
+            <div className="os-label mb-1">XP this month</div>
+            <div className="text-2xl font-mono text-[var(--accent)]">{xpMonth}</div>
+          </div>
+        </div>
+
+        <div className="os-block p-3">
+          <div className="os-label mb-1">Logging rhythm</div>
+          {timeOfDay.primary ? (
+            <p className="text-sm text-[var(--ink-2)]">
+              Most activity:{" "}
+              <span className="text-[var(--ink-1)] font-medium">{timeOfDay.primary.label}</span>
+              <span className="text-[var(--ink-3)]"> ({timeOfDay.primary.range})</span>
+              <span className="font-mono text-[11px] text-[var(--ink-3)]">
+                {" "}
+                · {timeOfDay.primary.count} logs · {timeOfDay.primary.xp} XP
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm text-[var(--ink-3)]">Not enough logs in the last 90 days.</p>
+          )}
+          {timeOfDay.secondary ? (
+            <p className="text-[11px] text-[var(--ink-3)] mt-1">
+              Runner-up: {timeOfDay.secondary.label} ({timeOfDay.secondary.count} logs)
+            </p>
+          ) : null}
+        </div>
+
+        <div>
+          <div className="os-label mb-2">By life area · XP this month</div>
+          {areaMonthXp.length === 0 ? (
+            <div className="os-block p-4 text-sm text-[var(--ink-3)]">No XP logged this month yet.</div>
+          ) : (
+            <div className="os-block p-3 space-y-2">
+              {areaMonthXp.map((row) => (
+                <div key={String(row.area)}>
+                  <div className="flex justify-between text-[11px] mb-1">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className="h-1.5 w-1.5 rounded-full shrink-0"
+                        style={{ background: row.color }}
+                      />
+                      <span className="font-mono text-[var(--ink-2)] truncate">{row.label}</span>
+                    </span>
+                    <span className="font-mono text-[var(--ink-1)] shrink-0 pl-2">
+                      {row.xp} XP · {row.pctOfMonth}%
+                    </span>
+                  </div>
+                  <div className="h-1 rounded-full bg-[var(--surface-2)] overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${row.pctOfMonth}%`,
+                        background: row.color,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </motion.div>
 
       {/* overall score this week */}

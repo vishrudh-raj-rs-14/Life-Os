@@ -20,8 +20,10 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { db } from "@/lib/db/dexie";
+import { getRepo } from "@/lib/repo";
+import { r2SignedGetUrl } from "@/lib/media/r2Client";
 import { useUser } from "@/store/useUser";
-import { LOCAL_USER_ID, todayISO, cn } from "@/lib/utils";
+import { todayISO, cn } from "@/lib/utils";
 import type { VoiceNote } from "@/types";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -174,22 +176,42 @@ function NoteCard({ note }: { note: VoiceNote }) {
   const urlRef = useRef<string>("");
 
   useEffect(() => {
-    const url = URL.createObjectURL(note.blob);
-    urlRef.current = url;
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.onended = () => {
-      setPlaying(false);
-      setProgress(0);
-    };
-    audio.ontimeupdate = () => {
-      if (audio.duration) setProgress(audio.currentTime / audio.duration);
-    };
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
+    async function setup() {
+      let url = "";
+      if (note.blob) {
+        url = URL.createObjectURL(note.blob);
+        objectUrl = url;
+      } else if (note.audioStorageKey) {
+        try {
+          url = await r2SignedGetUrl(note.audioStorageKey);
+        } catch {
+          return;
+        }
+      }
+      if (cancelled || !url) return;
+      urlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        setPlaying(false);
+        setProgress(0);
+      };
+      audio.ontimeupdate = () => {
+        if (audio.duration) setProgress(audio.currentTime / audio.duration);
+      };
+    }
+
+    void setup();
     return () => {
-      audio.pause();
-      URL.revokeObjectURL(url);
+      cancelled = true;
+      audioRef.current?.pause();
+      audioRef.current = null;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [note.blob]);
+  }, [note.blob, note.audioStorageKey]);
 
   function togglePlay() {
     const audio = audioRef.current;
@@ -206,7 +228,8 @@ function NoteCard({ note }: { note: VoiceNote }) {
   async function del() {
     const audio = audioRef.current;
     audio?.pause();
-    await db().voiceNotes.delete(note.id);
+    const repo = await getRepo();
+    await repo.deleteVoiceNote(note.id);
   }
 
   return (
@@ -360,12 +383,22 @@ function Recorder({ onSaved }: { onSaved: () => void }) {
     const blob = new Blob(chunksRef.current, { type: "audio/webm" });
     const duration = elapsed;
 
-    await db().voiceNotes.add({
-      id: nanoid(),
-      userId: user?.userId ?? LOCAL_USER_ID,
+    if (!user?.userId) {
+      setAnalyser(null);
+      setState("idle");
+      setElapsed(0);
+      onSaved();
+      return;
+    }
+    const repo = await getRepo();
+    const id = nanoid();
+    await repo.upsertVoiceNote({
+      id,
+      userId: user.userId,
       blob,
       duration,
       date: todayISO(),
+      mimeType: blob.type || "audio/webm",
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -446,14 +479,29 @@ export default function NotesPage() {
   const [saved, setSaved] = useState(0); // bump to force refresh hint
 
   const notes = useLiveQuery(
-    () =>
-      db()
-        .voiceNotes.orderBy("createdAt")
-        .reverse()
+    () => {
+      if (!user?.userId) return Promise.resolve([] as VoiceNote[]);
+      return db()
+        .voiceNotes.where("userId")
+        .equals(user.userId)
         .filter((n) => !n.deletedAt)
-        .toArray(),
-    [saved]
+        .toArray()
+        .then((rows) => rows.sort((a, b) => b.createdAt - a.createdAt));
+    },
+    [saved, user?.userId]
   );
+
+  useEffect(() => {
+    if (!user?.userId) return;
+    void (async () => {
+      try {
+        const repo = await getRepo();
+        await repo.listVoiceNotes();
+      } catch {
+        /* offline */
+      }
+    })();
+  }, [user?.userId]);
 
   // Group by month
   const byMonth = useMemo(() => {

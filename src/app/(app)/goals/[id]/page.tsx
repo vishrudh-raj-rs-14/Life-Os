@@ -28,6 +28,8 @@ import {
 } from "recharts";
 import { addDays, addWeeks, format, parseISO, startOfWeek } from "date-fns";
 import { db } from "@/lib/db/dexie";
+import { getRepo } from "@/lib/repo";
+import { useSignedMediaUrl } from "@/lib/media/useSignedMediaUrl";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { DayPicker } from "@/components/ui/DayPicker";
@@ -41,6 +43,7 @@ import { LOCAL_USER_ID, cn, todayISO } from "@/lib/utils";
 import { nanoid } from "nanoid";
 import type { GoalEntry, Habit } from "@/types";
 import { useUser } from "@/store/useUser";
+import { defaultRamp } from "@/lib/adherence/ramp";
 
 // ─── weekly bar data ──────────────────────────────────────────────────────────
 
@@ -124,10 +127,13 @@ function useObjectUrl(blob?: Blob) {
 }
 
 function EntryCard({ entry }: { entry: GoalEntry }) {
-  const imgUrl = useObjectUrl(entry.blob);
+  const blobUrl = useObjectUrl(entry.blob);
+  const signedUrl = useSignedMediaUrl(!entry.blob && entry.photoStorageKey ? entry.photoStorageKey : undefined);
+  const imgUrl = blobUrl || signedUrl;
 
   async function del() {
-    await db().goalEntries.delete(entry.id);
+    const repo = await getRepo();
+    await repo.deleteGoalEntry(entry.id);
   }
 
   return (
@@ -171,17 +177,20 @@ function AddEntry({ habitId }: { habitId: string }) {
 
   async function save() {
     if (!text.trim() && !blob) return;
+    if (!user?.userId) return;
     setSaving(true);
-    await db().goalEntries.add({
+    const repo = await getRepo();
+    const t = Date.now();
+    await repo.upsertGoalEntry({
       id: nanoid(),
-      userId: user?.userId ?? LOCAL_USER_ID,
+      userId: user.userId,
       habitId,
       date: todayISO(),
       text: text.trim() || undefined,
       blob: blob ?? undefined,
       mimeType: blob?.type,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: t,
+      updatedAt: t,
     });
     setText("");
     setBlob(null);
@@ -252,6 +261,11 @@ function EditPanel({
   const [weeklyTarget, setWeeklyTarget] = useState(habit.weeklyTarget ?? 7);
   const [difficulty,   setDifficulty]   = useState<import("@/types").Difficulty>(habit.difficulty ?? 2);
   const [saving,       setSaving]       = useState(false);
+  const [rampEnabled, setRampEnabled]   = useState(!!habit.ramp?.enabled);
+  const [rampTarget, setRampTarget]     = useState(
+    habit.ramp?.targetTime ?? habit.scheduledTime ?? "06:30"
+  );
+  const [rampStep, setRampStep]         = useState(habit.ramp?.stepMinutes ?? 15);
 
   const COLORS = [
     "#C9A96E", "#D97757", "#7AA98A", "#6E9BC9", "#A96EC9",
@@ -261,6 +275,18 @@ function EditPanel({
   async function save() {
     if (!title.trim()) return;
     setSaving(true);
+    let ramp: Habit["ramp"] = habit.ramp;
+    if (habit.kind === "binary") {
+      if (rampEnabled && time) {
+        ramp = {
+          ...defaultRamp({ targetTime: rampTarget || time, stepMinutes: rampStep }),
+          lastAdjustedWeekKey: habit.ramp?.lastAdjustedWeekKey,
+          successStreakDays: habit.ramp?.successStreakDays ?? 0,
+        };
+      } else {
+        ramp = undefined;
+      }
+    }
     await db().habits.update(habit.id, {
       title: title.trim(),
       target,
@@ -271,6 +297,7 @@ function EditPanel({
       customDays: customDays.length > 0 ? customDays : undefined,
       weeklyTarget: customDays.length > 0 ? customDays.length : weeklyTarget,
       difficulty,
+      ramp,
       updatedAt: Date.now(),
     });
     // Update local reminder record
@@ -296,6 +323,11 @@ function EditPanel({
       remindTime: time,
       days: customDays.length > 0 ? customDays : [0,1,2,3,4,5,6],
     });
+    const updated = await db().habits.get(habit.id);
+    if (updated) {
+      const repo = await getRepo();
+      await repo.upsertHabit(updated);
+    }
     setSaving(false);
     onClose();
   }
@@ -364,6 +396,52 @@ function EditPanel({
         <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
       </div>
 
+      {habit.kind === "binary" && (
+        <div className="space-y-3 rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40">
+          <label className="flex items-center gap-2 text-sm text-[var(--ink-2)]">
+            <input
+              type="checkbox"
+              checked={rampEnabled}
+              onChange={(e) => setRampEnabled(e.target.checked)}
+              className="h-4 w-4 accent-[var(--accent)]"
+            />
+            Progressive target (e.g. wake −15m / week)
+          </label>
+          {rampEnabled && (
+            <>
+              <div>
+                <Label>Target anchor (final)</Label>
+                <Input
+                  type="time"
+                  value={rampTarget}
+                  onChange={(e) => setRampTarget(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Step (minutes earlier per week)</Label>
+                <Input
+                  type="number"
+                  min={5}
+                  max={60}
+                  value={rampStep}
+                  onChange={(e) => setRampStep(Number(e.target.value) || 15)}
+                />
+              </div>
+              {rampStep > 15 && (
+                <p className="text-[11px] text-[var(--warn)] leading-relaxed">
+                  Large weekly shifts can be hard on sleep rhythm. Many coaches use 10–15 minutes per week — adjust if
+                  this feels like too much.
+                </p>
+              )}
+              <p className="text-[10px] font-mono text-[var(--ink-3)] leading-relaxed">
+                Each Monday week you’ll be asked to accept the next step or snooze. Not medical advice — you stay in
+                control.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
       <div>
         <Label>Difficulty</Label>
         <div className="flex gap-1">
@@ -397,6 +475,18 @@ export default function GoalDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router  = useRouter();
   const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    void (async () => {
+      try {
+        const repo = await getRepo();
+        await repo.listGoalEntries({ habitId: id });
+      } catch {
+        /* offline */
+      }
+    })();
+  }, [id]);
 
   const habit   = useLiveQuery(() => db().habits.get(id), [id]);
   const allLogs = useLiveQuery(() => db().logs.toArray(), []);

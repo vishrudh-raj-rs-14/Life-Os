@@ -13,6 +13,7 @@ import {
   LogOut,
   RotateCcw,
   ShieldCheck,
+  Database,
 } from "lucide-react";
 import { useUser } from "@/store/useUser";
 import { Button } from "@/components/ui/Button";
@@ -22,7 +23,6 @@ import { getRepo } from "@/lib/repo";
 import { db } from "@/lib/db/dexie";
 import { STREAK_THRESHOLD } from "@/lib/engine";
 import type { Tone } from "@/types";
-import { seedVishrudh, shouldSeedVishrudhProfile } from "@/lib/seed";
 import { ensureAuthUser } from "@/lib/auth";
 import { waitForWrites } from "@/lib/sync/writeQueue";
 
@@ -220,67 +220,41 @@ export default function SettingsPage() {
     if (!confirm("Delete EVERYTHING and restart from scratch? This cannot be undone.")) return;
     setResetting(true);
     try {
-      const { supabaseBrowser } = await import("@/lib/supabase/client");
-      const sb = supabaseBrowser();
-      const authUser = await ensureAuthUser({ force: true });
-      if (!authUser?.id) {
-        throw new Error("Reset requires a signed-in Google account.");
-      }
-      const email = authUser?.email ?? cloudUser;
-      const shouldSeedVishrudh = shouldSeedVishrudhProfile(email, user?.handle);
-      const authUserId = authUser.id;
-      const t = Date.now();
-      const resetUser = {
-        ...user!,
-        userId: authUserId,
-        totalXp: 0,
-        level: 1,
-        streakDays: 0,
-        streakFreezes: 2,
-        lastActiveDate: undefined,
-        dailyBonusDate: undefined,
-        dailyBonusXp: undefined,
-        updatedAt: t,
-      };
-
       await waitForWrites();
-      if (sb) {
-        // Delete child rows directly by the authenticated account id.
-        // This avoids stale local profile ids making reset a no-op.
-        await sb.from("logs").delete().eq("user_id", authUserId);
-        await sb.from("sessions").delete().eq("user_id", authUserId);
-        await sb.from("reminders").delete().eq("user_id", authUserId);
-        await sb.from("tracker_entries").delete().eq("user_id", authUserId);
-        await sb.from("trackers").delete().eq("user_id", authUserId);
-        await sb.from("achievements").delete().eq("user_id", authUserId);
-        await sb.from("habits").delete().eq("user_id", authUserId);
-        await sb.from("goals").delete().eq("user_id", authUserId);
-
-        const { error } = await sb.from("user_profile").upsert({
-          id: authUserId,
-          auth_user_id: authUserId,
-          handle: resetUser.handle,
-          display_name: resetUser.displayName,
-          class_name: resetUser.className,
-          level: 1,
-          tone: resetUser.tone,
-          total_xp: 0,
-          streak_days: 0,
-          streak_freezes: 2,
-          last_active_date: null,
-          is_public: resetUser.isPublic,
-          daily_bonus_date: null,
-          daily_bonus_xp: null,
-          created_at: resetUser.createdAt ?? t,
-          updated_at: t,
-          deleted_at: null,
-        });
-        if (error) throw error;
+      await ensureAuthUser({ force: true });
+      const currentUser = user!;
+      const res = await fetch("/api/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          handle: currentUser.handle,
+          displayName: currentUser.displayName,
+          className: currentUser.className,
+          tone: currentUser.tone,
+          isPublic: currentUser.isPublic,
+          createdAt: currentUser.createdAt,
+          previousUserId: currentUser.userId,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error ?? "Reset failed.");
       }
-      if (shouldSeedVishrudh) await seedVishrudh(authUserId);
-      await waitForWrites();
+      const expectedVishrudh =
+        cloudUser === "vishrudh.shrinivas@gmail.com" ||
+        json.email === "vishrudh.shrinivas@gmail.com" ||
+        currentUser.handle === "vishrudh";
+      if (expectedVishrudh && !json.seeded) {
+        throw new Error(`Reset profile cleared, but no Vishrudh habits were seeded. Server saw ${json.email ?? "unknown email"}.`);
+      }
+      alert(
+        `Reset complete.\nEmail: ${json.email ?? "unknown"}\nSeeded habits: ${json.seeded ?? 0}\nCloud habits now: ${json.habitCount ?? "unknown"}\nXP after reset: ${json.profile?.total_xp ?? "unknown"}`
+      );
       await db().delete();
       window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Reset failed. Check console for details.");
     } finally {
       setResetting(false);
     }
@@ -298,6 +272,12 @@ export default function SettingsPage() {
     a.download = `lifeos-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    const u = user!;
+    await setUser({
+      ...u,
+      adherence: { ...u.adherence, lastDataExportAt: Date.now() },
+      updatedAt: Date.now(),
+    });
   }
 
   return (
@@ -335,6 +315,7 @@ export default function SettingsPage() {
             ["13:00", "Midday check-in if <30% done"],
             ["20:00", `Streak alert if streak is at risk`],
             ["21:30", "End-of-day recap"],
+            ["21:45", "Close the loop (still-open habits)"],
             ["08:05", "Yesterday miss reminder"],
           ].map(([t, d]) => (
             <div key={t} className="flex items-start gap-2">
@@ -406,10 +387,84 @@ export default function SettingsPage() {
         </label>
       </Section>
 
+      {/* ── Trust & habits ─────────────────────────────────────────────── */}
+      <Section icon={<Database size={14} />} title="Trust & habits">
+        <p className="text-sm text-[var(--ink-2)] mb-3 leading-relaxed">
+          Your data is yours. Export anytime; we show when the app last synced habits from the cloud and when you last
+          exported a backup.
+        </p>
+        <div className="space-y-1 text-[11px] font-mono text-[var(--ink-3)] mb-4">
+          <div>
+            Last cloud habit sync:{" "}
+            <span className="text-[var(--ink-2)]">
+              {user.adherence?.lastCloudSyncAt
+                ? new Date(user.adherence.lastCloudSyncAt).toLocaleString()
+                : "—"}
+            </span>
+          </div>
+          <div>
+            Last JSON export:{" "}
+            <span className="text-[var(--ink-2)]">
+              {user.adherence?.lastDataExportAt
+                ? new Date(user.adherence.lastDataExportAt).toLocaleString()
+                : "—"}
+            </span>
+          </div>
+        </div>
+        <div className="mb-4">
+          <Label>On-time XP window (±minutes around reminder)</Label>
+          <div className="flex items-center gap-3 mt-2">
+            <input
+              type="range"
+              min={15}
+              max={120}
+              step={5}
+              value={user.adherence?.scheduleGraceMinutes ?? 45}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                void setUser({
+                  ...user,
+                  adherence: { ...user.adherence, scheduleGraceMinutes: v },
+                  updatedAt: Date.now(),
+                });
+              }}
+              className="flex-1 accent-[var(--accent)]"
+            />
+            <span className="font-mono text-xs text-[var(--ink-2)] w-10 text-right">
+              {user.adherence?.scheduleGraceMinutes ?? 45}m
+            </span>
+          </div>
+          <p className="text-[10px] text-[var(--ink-3)] font-mono mt-1">
+            Logging near your scheduled time earns a small XP bonus; late logs still count with a mild reduction.
+          </p>
+        </div>
+        <label className="flex items-start gap-3 text-sm text-[var(--ink-2)] mb-2">
+          <input
+            type="checkbox"
+            checked={!!user.adherence?.showWeeklyScorecardToPartner}
+            onChange={(e) =>
+              void setUser({
+                ...user,
+                adherence: {
+                  ...user.adherence,
+                  showWeeklyScorecardToPartner: e.target.checked,
+                },
+                updatedAt: Date.now(),
+              })
+            }
+            className="h-5 w-5 mt-0.5 accent-[var(--accent)] shrink-0"
+          />
+          <span>
+            Opt in: accountability partner may view my weekly scorecard (read-only intent; honor system until shared
+            dashboards ship).
+          </span>
+        </label>
+      </Section>
+
       {/* ── Data export ───────────────────────────────────────────────── */}
       <Section icon={<Download size={14} />} title="Data">
         <div className="flex flex-col gap-2">
-          <Button onClick={exportData} variant="secondary" size="sm">
+          <Button onClick={() => void exportData()} variant="secondary" size="sm">
             Export JSON backup
           </Button>
           <Button

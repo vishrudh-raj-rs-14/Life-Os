@@ -12,11 +12,8 @@ export function supabaseBrowser() {
   return _client;
 }
 
-// Always use the Vercel production URL for the OAuth redirect so Google
-// never bounces back to localhost after signing in on the live site.
 export function authRedirectUrl() {
-  const base =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (typeof window !== "undefined" ? window.location.origin : "");
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const base = origin || process.env.NEXT_PUBLIC_SITE_URL || "";
   return `${base}/auth/callback`;
 }

@@ -151,6 +151,15 @@ async function tickOnce(userTone: Tone) {
     }
   }
 
+  // ── 5b. Close the loop — 21:45 (recovery; still-open habits) ─────────────
+  if (time === "21:45") {
+    const key = `closeloop:${today}`;
+    if (once(key, fired) && missedCount > 0) {
+      fireLocal("Close the loop", tpl.closeTheLoop(missedCount), key);
+      fired[key] = Date.now();
+    }
+  }
+
   // ── 6. Day-after miss — 08:05, if yesterday wasn't a streak day ─────────
   if (time === "08:05") {
     const yesterday = formatDate(new Date(now.getTime() - 24 * 3600 * 1000));
@@ -180,7 +189,11 @@ async function tickOnce(userTone: Tone) {
 
   // ── 7. Voice note lookbacks — 10:00 ──────────────────────────────────────
   if (time === "10:00") {
-    const allNotes = await db().voiceNotes.toArray();
+    const profile = await db().user.toArray();
+    const uid = profile[0]?.userId;
+    const allNotes = uid
+      ? await db().voiceNotes.where("userId").equals(uid).toArray()
+      : await db().voiceNotes.toArray();
 
     // 1-month lookback
     const oneMonthAgo = formatDate(

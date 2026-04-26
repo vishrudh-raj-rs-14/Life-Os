@@ -7,14 +7,17 @@ import { nanoid } from "nanoid";
 import { addDays, format, startOfWeek, endOfWeek } from "date-fns";
 import { ArrowLeft, Mic, MicOff, Play, Pause } from "lucide-react";
 import { db } from "@/lib/db/dexie";
+import { getRepo } from "@/lib/repo";
 import { Textarea } from "@/components/ui/Input";
-import { cn, LOCAL_USER_ID, todayISO } from "@/lib/utils";
+import { cn, todayISO } from "@/lib/utils";
+import { useUser } from "@/store/useUser";
 import { habitDoneToday, isHabitDueToday } from "@/lib/engine";
 import type { Habit } from "@/types";
 
 // ─── tiny inline recorder (reused pattern from notes page) ───────────────────
 
 function MiniRecorder() {
+  const user = useUser((s) => s.user);
   const [state, setState] = useState<"idle" | "recording" | "done">("idle");
   const [playing, setPlaying] = useState(false);
   const mediaRef = useRef<MediaRecorder | null>(null);
@@ -44,15 +47,21 @@ function MiniRecorder() {
     audio.onended = () => setPlaying(false);
     audioRef.current = audio;
 
-    // save to voice notes
-    await db().voiceNotes.add({
+    if (!user?.userId) {
+      setState("idle");
+      return;
+    }
+    const repo = await getRepo();
+    const t = Date.now();
+    await repo.upsertVoiceNote({
       id: nanoid(),
-      userId: LOCAL_USER_ID,
+      userId: user.userId,
       blob: b,
       duration: elapsed,
       date: todayISO(),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      mimeType: b.type || "audio/webm",
+      createdAt: t,
+      updatedAt: t,
     });
     setState("done");
   }

@@ -106,7 +106,7 @@ export default function OnboardingPage() {
         await seedVishrudh(authUser?.id);
       }
       await useUser.getState().load();
-      router.replace("/");
+      router.replace("/commitment");
     } catch (err) {
       console.error(err);
       setSubmitting(false);

@@ -49,8 +49,10 @@ interface UserState {
   syncDailyXpBonus: (
     today: string,
     dueHabits: Habit[],
-    todayLogs: Log[]
+    todayLogs: Log[],
+    graceMinutes?: number
   ) => Promise<DailyBonusResult>;
+  grantStreakFreezes: (n: number) => Promise<void>;
 }
 
 export const useUser = create<UserState>((set, get) => ({
@@ -114,7 +116,23 @@ export const useUser = create<UserState>((set, get) => ({
 
     if (updated) queueProfileSync(updated);
   },
-  async syncDailyXpBonus(today, dueHabits, todayLogs) {
+  async grantStreakFreezes(n) {
+    if (n <= 0) return;
+    if (!get().user) await get().load();
+    let updated: UserProfile | undefined;
+    set((state) => {
+      const u = state.user;
+      if (!u) return state;
+      updated = {
+        ...u,
+        streakFreezes: Math.min(99, (u.streakFreezes ?? 0) + n),
+        updatedAt: Date.now(),
+      };
+      return { user: updated };
+    });
+    if (updated) queueProfileSync(updated);
+  },
+  async syncDailyXpBonus(today, dueHabits, todayLogs, graceMinutes = 45) {
     if (dailyBonusTimer) clearTimeout(dailyBonusTimer);
     resolvePendingDailyBonus?.(NO_DAILY_BONUS_CHANGE);
 
@@ -125,7 +143,10 @@ export const useUser = create<UserState>((set, get) => ({
         resolvePendingDailyBonus = undefined;
 
         const dueIds = new Set(dueHabits.map((h) => h.id));
-        const cap = dueHabits.reduce((a, h) => a + maxDailyXpForHabit(h), 0);
+        const cap = dueHabits.reduce(
+          (a, h) => a + maxDailyXpForHabit(h, { todayISO: today, graceMinutes }),
+          0
+        );
         const earned = dailyXpEarnedFromLogs(todayLogs, today, dueIds);
         let response: DailyBonusResult = {
           delta: 0,

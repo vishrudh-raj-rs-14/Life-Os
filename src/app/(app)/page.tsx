@@ -15,6 +15,9 @@ import { QuestCard } from "@/components/today/QuestCard";
 import { ActiveTimerCard } from "@/components/today/ActiveTimerCard";
 import { LevelUpOverlay } from "@/components/LevelUpOverlay";
 import { GoalsList } from "@/components/goals/GoalsList";
+import { WeeklyReviewCard } from "@/components/today/WeeklyReviewCard";
+import { RampWeekPrompt } from "@/components/today/RampWeekPrompt";
+import { habitDoneHint } from "@/lib/adherence/doneHints";
 import {
   dailyXpEarnedFromLogs,
   habitDoneToday,
@@ -22,6 +25,7 @@ import {
   levelName,
   maxDailyXpForHabit,
   xpForHabit,
+  xpForHabitWithSchedule,
 } from "@/lib/engine";
 import { nowMs, todayISO, vibrate } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
@@ -32,7 +36,7 @@ import { getRepo } from "@/lib/repo";
 type Tab = "today" | "goals";
 
 export default function TodayPage() {
-  const { user, awardXp, bumpStreak, load, syncDailyXpBonus } = useUser();
+  const { user, awardXp, bumpStreak, load, syncDailyXpBonus, setUser } = useUser();
   const timer = useTimer();
   const [today] = useState(todayISO());
   const [tab, setTab] = useState<Tab>("today");
@@ -93,9 +97,15 @@ export default function TodayPage() {
 
   const dismissLevelUp = useCallback(() => setLevelUp(null), []);
 
+  const graceMinutes = user?.adherence?.scheduleGraceMinutes ?? 45;
+
   const dailyCap = useMemo(
-    () => dueHabits.reduce((a, h) => a + maxDailyXpForHabit(h), 0),
-    [dueHabits]
+    () =>
+      dueHabits.reduce(
+        (a, h) => a + maxDailyXpForHabit(h, { todayISO: today, graceMinutes }),
+        0
+      ),
+    [dueHabits, today, graceMinutes]
   );
   const dailyEarned = useMemo(() => {
     const ids = new Set(dueHabits.map((h) => h.id));
@@ -104,7 +114,7 @@ export default function TodayPage() {
 
   useEffect(() => {
     if (!user || todayLogs === undefined) return;
-    void syncDailyXpBonus(today, dueHabits, todayLogs).then((res) => {
+    void syncDailyXpBonus(today, dueHabits, todayLogs, graceMinutes).then((res) => {
       if (res.leveledUp) {
         setLevelUp({ level: res.newLevel, name: levelName(res.newLevel) });
       } else if (res.delta > 0 && res.desiredBonus > 0) {
@@ -121,7 +131,7 @@ export default function TodayPage() {
         });
       }
     });
-  }, [user, today, dueHabits, todayLogs, syncDailyXpBonus]);
+  }, [user, today, dueHabits, todayLogs, syncDailyXpBonus, graceMinutes]);
 
   // Show skeleton while user profile or habits are loading
   if (!user || habits === undefined) {
@@ -177,8 +187,8 @@ export default function TodayPage() {
     if (delta === 0) return;
     const freshTodayLogs = await db().logs.where("date").equals(today).toArray();
     if (delta > 0) {
-      const xp = xpForHabit(h, delta);
       const t = nowMs();
+      const xp = xpForHabitWithSchedule(h, delta, t, graceMinutes);
       const log = stampedLog(h, today, delta, xp, t, userId);
       await db().logs.add(log);
       scheduleLogSync(log.id);
@@ -241,8 +251,8 @@ export default function TodayPage() {
       setOptimisticDone(prev => { const n = { ...prev }; delete n[h.id]; return n; });
       return;
     }
-    const xp = xpForHabit(h, 1);
     const t = nowMs();
+    const xp = xpForHabitWithSchedule(h, 1, t, graceMinutes);
     const log = stampedLog(h, today, 1, xp, t, userId);
     await db().logs.add(log);
     scheduleLogSync(log.id);
@@ -275,12 +285,13 @@ export default function TodayPage() {
     else set.add(idx);
     const stepsArr = Array.from(set).sort((a, b) => a - b);
     const value = stepsArr.length;
-    const xp = xpForHabit(h, value);
+    const tUp = nowMs();
+    const xp = xpForHabitWithSchedule(h, value, tUp, graceMinutes);
     await db().logs.update(log.id, {
       steps: stepsArr,
       value,
       xpAwarded: xp,
-      updatedAt: nowMs(),
+      updatedAt: tUp,
     });
     // Read back and upsert the updated row to cloud
     const updatedRow = await db().logs.get(log.id);
@@ -357,6 +368,18 @@ export default function TodayPage() {
         </div>
       ) : (
       <>
+      {(user.adherence?.commitmentCompletedAt != null ||
+        user.adherence?.commitmentSkipped) && (
+        <div className="px-5 space-y-3">
+          <WeeklyReviewCard
+            adherence={user.adherence}
+            onSave={async (next) => {
+              await setUser({ ...user, adherence: next, updatedAt: Date.now() });
+            }}
+          />
+          <RampWeekPrompt habits={habits} />
+        </div>
+      )}
       {timer.goalId && timer.startedAt && activeGoal && (
         <div className="px-5">
           {/* Timer UI reads pause/elapsed from useTimer inside the card */}
@@ -399,7 +422,8 @@ export default function TodayPage() {
                     value={value}
                     done={h.id in optimisticDone ? optimisticDone[h.id] : done}
                     progress={progress}
-                    xp={xpForHabit(h, h.target)}
+                    xp={maxDailyXpForHabit(h, { todayISO: today, graceMinutes })}
+                    doneHint={habitDoneHint(h, graceMinutes)}
                     todayStepsMask={todayLog?.steps}
                     recent={stripFor(h)}
                     onLog={(delta) => void enqueueHabitOp(h.id, () => logQuantity(h, delta))}
@@ -437,7 +461,8 @@ export default function TodayPage() {
                         value={value}
                         done={h.id in optimisticDone ? optimisticDone[h.id] : done}
                         progress={progress}
-                        xp={xpForHabit(h, h.target)}
+                        xp={maxDailyXpForHabit(h, { todayISO: today, graceMinutes })}
+                        doneHint={habitDoneHint(h, graceMinutes)}
                         todayStepsMask={todayLog?.steps}
                         recent={stripFor(h)}
                         onLog={(delta) => void enqueueHabitOp(h.id, () => logQuantity(h, delta))}

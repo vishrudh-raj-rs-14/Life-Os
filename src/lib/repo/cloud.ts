@@ -1,12 +1,24 @@
 "use client";
 
-import type { Habit, Log, Reminder, Session, UserProfile } from "@/types";
+import type {
+  AdherenceProfile,
+  BodyLog,
+  GoalEntry,
+  Habit,
+  HabitRamp,
+  Log,
+  Reminder,
+  Session,
+  UserProfile,
+  VoiceNote,
+} from "@/types";
 import type { Repository } from "./index";
 import { DexieRepository } from "./dexie";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { db } from "@/lib/db/dexie";
 import { ensureAuthUser, getCachedAuthUser } from "@/lib/auth";
 import { enqueueWrite } from "@/lib/sync/writeQueue";
+import { r2DeleteKey, r2UploadBlob, r2WipeUserPrefix } from "@/lib/media/r2Client";
 
 // Cloud-first for core tables (user, habits, logs, sessions, reminders).
 // Dexie remains the offline cache fallback.
@@ -25,6 +37,37 @@ function throwIfError(result: { error: unknown }) {
   if (result.error) throw result.error;
 }
 
+function withoutLevel(row: ReturnType<typeof mapUserToRow>) {
+  const { level: _level, ...rest } = row;
+  return rest;
+}
+
+function isMissingLevelError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    String((error as { message?: unknown }).message).includes("'level' column")
+  );
+}
+
+function parseAdherenceJson(raw: unknown): AdherenceProfile | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  return raw as AdherenceProfile;
+}
+
+function parseRampJson(raw: unknown): HabitRamp | undefined {
+  if (!raw) return undefined;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as HabitRamp;
+    } catch {
+      return undefined;
+    }
+  }
+  return raw as HabitRamp;
+}
+
 function mapUserFromRow(r: any): UserProfile {
   return {
     userId: r.id,
@@ -38,6 +81,7 @@ function mapUserFromRow(r: any): UserProfile {
     lastActiveDate: r.last_active_date ?? undefined,
     isPublic: (r.is_public ?? 0) as 0 | 1,
     tone: r.tone ?? "coach",
+    adherence: parseAdherenceJson(r.adherence_json),
     createdAt: r.created_at ?? Date.now(),
     updatedAt: r.updated_at ?? Date.now(),
     dailyBonusDate: r.daily_bonus_date ?? undefined,
@@ -61,6 +105,7 @@ function mapUserToRow(u: UserProfile, authUserId: string) {
     is_public: u.isPublic,
     daily_bonus_date: u.dailyBonusDate ?? null,
     daily_bonus_xp: u.dailyBonusXp ?? null,
+    adherence_json: u.adherence ?? null,
     created_at: u.createdAt,
     updated_at: u.updatedAt,
     deleted_at: (u as any).deletedAt ?? null,
@@ -86,6 +131,7 @@ function mapHabitFromRow(r: any): Habit {
     difficulty: r.difficulty ?? 2,
     weeklyTarget: r.weekly_target ?? undefined,
     area: r.area ?? undefined,
+    ramp: parseRampJson(r.ramp_json),
     archived: r.archived ?? 0,
     createdAt: r.created_at ?? Date.now(),
     updatedAt: r.updated_at ?? Date.now(),
@@ -112,6 +158,7 @@ function mapHabitToRow(h: Habit) {
     difficulty: h.difficulty ?? 2,
     weekly_target: h.weeklyTarget ?? null,
     area: h.area ?? null,
+    ramp_json: h.ramp ?? null,
     archived: h.archived ?? 0,
     created_at: h.createdAt,
     updated_at: h.updatedAt,
@@ -213,6 +260,94 @@ function mapReminderToRow(r: Reminder) {
   };
 }
 
+function mapBodyLogFromRow(r: any): BodyLog {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    date: r.date,
+    weight: r.weight ?? undefined,
+    notes: r.notes ?? undefined,
+    photoStorageKey: r.photo_storage_key ?? undefined,
+    mimeType: r.photo_mime_type ?? undefined,
+    createdAt: r.created_at ?? Date.now(),
+    updatedAt: r.updated_at ?? Date.now(),
+  };
+}
+
+function mapBodyLogToRow(b: BodyLog) {
+  return {
+    id: b.id,
+    user_id: b.userId,
+    date: b.date,
+    weight: b.weight ?? null,
+    notes: b.notes ?? null,
+    photo_storage_key: b.photoStorageKey ?? null,
+    photo_mime_type: b.mimeType ?? null,
+    created_at: b.createdAt,
+    updated_at: b.updatedAt,
+  };
+}
+
+function mapVoiceNoteFromRow(r: any): VoiceNote {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    title: r.title ?? undefined,
+    duration: r.duration_seconds ?? 0,
+    date: r.date,
+    audioStorageKey: r.audio_storage_key ?? undefined,
+    mimeType: r.audio_mime_type ?? undefined,
+    createdAt: r.created_at ?? Date.now(),
+    updatedAt: r.updated_at ?? Date.now(),
+    deletedAt: r.deleted_at ?? undefined,
+  };
+}
+
+function mapVoiceNoteToRow(v: VoiceNote) {
+  return {
+    id: v.id,
+    user_id: v.userId,
+    title: v.title ?? null,
+    duration_seconds: v.duration,
+    date: v.date,
+    audio_storage_key: v.audioStorageKey!,
+    audio_mime_type: v.mimeType ?? null,
+    created_at: v.createdAt,
+    updated_at: v.updatedAt,
+    deleted_at: v.deletedAt ?? null,
+  };
+}
+
+function mapGoalEntryFromRow(r: any): GoalEntry {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    habitId: r.habit_id,
+    date: r.date,
+    text: r.note_text ?? undefined,
+    photoStorageKey: r.photo_storage_key ?? undefined,
+    mimeType: r.photo_mime_type ?? undefined,
+    createdAt: r.created_at ?? Date.now(),
+    updatedAt: r.updated_at ?? Date.now(),
+    deletedAt: r.deleted_at ?? undefined,
+  };
+}
+
+function mapGoalEntryToRow(e: GoalEntry) {
+  return {
+    id: e.id,
+    user_id: e.userId,
+    habit_id: e.habitId,
+    date: e.date,
+    note_text: e.text ?? null,
+    photo_storage_key: e.photoStorageKey ?? null,
+    photo_mime_type: e.mimeType ?? null,
+    created_at: e.createdAt,
+    updated_at: e.updatedAt,
+    deleted_at: e.deletedAt ?? null,
+  };
+}
+
 export class CloudRepository implements Repository {
   private local = new DexieRepository();
 
@@ -258,7 +393,16 @@ export class CloudRepository implements Repository {
           .maybeSingle();
 
         const safe: UserProfile = { ...user, createdAt: existing?.created_at ?? user.createdAt };
-        await sb.from("user_profile").upsert(mapUserToRow(safe, authUserId));
+        const row = mapUserToRow(safe, authUserId);
+        const { error } = await sb.from("user_profile").upsert(row);
+        if (error) {
+          if (isMissingLevelError(error)) {
+            const retry = await sb.from("user_profile").upsert(withoutLevel(row));
+            if (retry.error) throw retry.error;
+            return;
+          }
+          throw error;
+        }
       });
     }
   }
@@ -282,6 +426,15 @@ export class CloudRepository implements Repository {
         const local = await db().habits.get(h.id);
         if (isRemoteNewer(h, local)) await db().habits.put(h);
       }
+      void import("@/store/useUser").then(({ useUser }) => {
+        const u = useUser.getState().user;
+        if (!u) return;
+        void useUser.getState().setUser({
+          ...u,
+          adherence: { ...u.adherence, lastCloudSyncAt: Date.now() },
+          updatedAt: Date.now(),
+        });
+      });
       return habits
         .filter((h) => (opts?.goalId ? h.goalId === opts.goalId : true))
         .filter((h) => (opts?.includeArchived ? true : !h.archived && !h.deletedAt));
@@ -430,6 +583,183 @@ export class CloudRepository implements Repository {
     if (sb) await enqueueWrite(() => sb.from("reminders").delete().eq("id", id).then(throwIfError));
   }
 
+  async listBodyLogs(): Promise<BodyLog[]> {
+    const sb = supabaseBrowser();
+    if (!sb) return this.local.listBodyLogs();
+    const userId = await this.currentUserId();
+    if (!userId) return [];
+    const { data, error } = await sb.from("body_logs").select("*").eq("user_id", userId);
+    if (!error && Array.isArray(data)) {
+      const rows = data.map(mapBodyLogFromRow).filter((b) => b.userId === userId);
+      for (const b of rows) {
+        const local = await db().bodyLogs.get(b.id);
+        if (isRemoteNewer(b, local)) await db().bodyLogs.put(b);
+      }
+      const localLogs = await this.local.listBodyLogs();
+      return localLogs.filter((b) => b.userId === userId).sort((a, b) => b.date.localeCompare(a.date));
+    }
+    const fb = await this.local.listBodyLogs();
+    const uid = await this.currentUserId();
+    return uid ? fb.filter((b) => b.userId === uid) : fb;
+  }
+
+  async upsertBodyLog(log: BodyLog): Promise<void> {
+    const sb = supabaseBrowser();
+    let merged: BodyLog = { ...log };
+    await this.local.upsertBodyLog(log);
+    if (!sb) return;
+    if (log.blob) {
+      try {
+        const key = await r2UploadBlob("body", log.id, log.blob);
+        merged = {
+          ...merged,
+          photoStorageKey: key,
+          mimeType: log.mimeType ?? log.blob.type ?? undefined,
+        };
+        await this.local.upsertBodyLog(merged);
+      } catch {
+        /* R2 not configured or upload failed — still sync weight/notes */
+      }
+    }
+    await enqueueWrite(() =>
+      sb
+        .from("body_logs")
+        .upsert(mapBodyLogToRow(merged), { onConflict: "user_id,date" })
+        .then(throwIfError)
+    );
+  }
+
+  async deleteBodyLog(id: string): Promise<void> {
+    const existing = await db().bodyLogs.get(id);
+    const sb = supabaseBrowser();
+    await this.local.deleteBodyLog(id);
+    if (existing?.photoStorageKey) {
+      try {
+        await r2DeleteKey(existing.photoStorageKey);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (sb) await enqueueWrite(() => sb.from("body_logs").delete().eq("id", id).then(throwIfError));
+  }
+
+  async listVoiceNotes(): Promise<VoiceNote[]> {
+    const sb = supabaseBrowser();
+    if (!sb) return this.local.listVoiceNotes();
+    const userId = await this.currentUserId();
+    if (!userId) return [];
+    const { data, error } = await sb.from("voice_notes").select("*").eq("user_id", userId);
+    if (!error && Array.isArray(data)) {
+      const rows = data.map(mapVoiceNoteFromRow).filter((v) => v.userId === userId && !v.deletedAt);
+      for (const v of rows) {
+        const local = await db().voiceNotes.get(v.id);
+        if (isRemoteNewer(v, local)) await db().voiceNotes.put({ ...v, blob: local?.blob });
+      }
+      const localNotes = await this.local.listVoiceNotes();
+      return localNotes.filter((n) => n.userId === userId);
+    }
+    const fallback = await this.local.listVoiceNotes();
+    const uid = await this.currentUserId();
+    return uid ? fallback.filter((n) => n.userId === uid) : fallback;
+  }
+
+  async upsertVoiceNote(note: VoiceNote): Promise<void> {
+    const sb = supabaseBrowser();
+    await this.local.upsertVoiceNote(note);
+    if (!sb) return;
+    let merged: VoiceNote = { ...note };
+    if (note.blob) {
+      try {
+        const key = await r2UploadBlob("voice", note.id, note.blob);
+        merged = {
+          ...merged,
+          audioStorageKey: key,
+          mimeType: (note.mimeType ?? note.blob.type) || "audio/webm",
+        };
+        await this.local.upsertVoiceNote(merged);
+      } catch {
+        return;
+      }
+    }
+    if (!merged.audioStorageKey) return;
+    await enqueueWrite(() =>
+      sb.from("voice_notes").upsert(mapVoiceNoteToRow(merged)).then(throwIfError)
+    );
+  }
+
+  async deleteVoiceNote(id: string): Promise<void> {
+    const existing = await db().voiceNotes.get(id);
+    const sb = supabaseBrowser();
+    await this.local.deleteVoiceNote(id);
+    if (existing?.audioStorageKey) {
+      try {
+        await r2DeleteKey(existing.audioStorageKey);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (sb) await enqueueWrite(() => sb.from("voice_notes").delete().eq("id", id).then(throwIfError));
+  }
+
+  async listGoalEntries(opts?: { habitId?: string }): Promise<GoalEntry[]> {
+    const sb = supabaseBrowser();
+    if (!sb) return this.local.listGoalEntries(opts);
+    const userId = await this.currentUserId();
+    if (!userId) return [];
+    let q: any = sb.from("goal_entries").select("*").eq("user_id", userId);
+    if (opts?.habitId) q = q.eq("habit_id", opts.habitId);
+    const { data, error } = await q;
+    if (!error && Array.isArray(data)) {
+      const rows = data.map(mapGoalEntryFromRow).filter((e) => e.userId === userId && !e.deletedAt);
+      for (const e of rows) {
+        const local = await db().goalEntries.get(e.id);
+        if (isRemoteNewer(e, local)) await db().goalEntries.put({ ...e, blob: local?.blob });
+      }
+      const localE = await this.local.listGoalEntries(opts);
+      return localE.filter((e) => e.userId === userId);
+    }
+    const fb = await this.local.listGoalEntries(opts);
+    const uid = await this.currentUserId();
+    return uid ? fb.filter((e) => e.userId === uid) : fb;
+  }
+
+  async upsertGoalEntry(entry: GoalEntry): Promise<void> {
+    const sb = supabaseBrowser();
+    let merged: GoalEntry = { ...entry };
+    await this.local.upsertGoalEntry(entry);
+    if (!sb) return;
+    if (entry.blob) {
+      try {
+        const key = await r2UploadBlob("goal", entry.id, entry.blob);
+        merged = {
+          ...merged,
+          photoStorageKey: key,
+          mimeType: entry.mimeType ?? entry.blob.type ?? undefined,
+        };
+        await this.local.upsertGoalEntry(merged);
+      } catch {
+        /* photo stays local only */
+      }
+    }
+    await enqueueWrite(() =>
+      sb.from("goal_entries").upsert(mapGoalEntryToRow(merged)).then(throwIfError)
+    );
+  }
+
+  async deleteGoalEntry(id: string): Promise<void> {
+    const existing = await db().goalEntries.get(id);
+    const sb = supabaseBrowser();
+    await this.local.deleteGoalEntry(id);
+    if (existing?.photoStorageKey) {
+      try {
+        await r2DeleteKey(existing.photoStorageKey);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (sb) await enqueueWrite(() => sb.from("goal_entries").delete().eq("id", id).then(throwIfError));
+  }
+
   // passthrough for remaining methods (still local-only)
   listTrackers = this.local.listTrackers.bind(this.local);
   upsertTracker = this.local.upsertTracker.bind(this.local);
@@ -467,9 +797,17 @@ export class CloudRepository implements Repository {
         await sb.from("reminders").delete().eq("user_id", userId);
         await sb.from("tracker_entries").delete().eq("user_id", userId);
         await sb.from("trackers").delete().eq("user_id", userId);
+        await sb.from("body_logs").delete().eq("user_id", userId);
+        await sb.from("voice_notes").delete().eq("user_id", userId);
+        await sb.from("goal_entries").delete().eq("user_id", userId);
         await sb.from("achievements").delete().eq("user_id", userId);
         await sb.from("habits").delete().eq("user_id", userId);
         await sb.from("goals").delete().eq("user_id", userId);
+        try {
+          await r2WipeUserPrefix();
+        } catch {
+          /* R2 optional */
+        }
       }
     }
     await this.local.clearAll();

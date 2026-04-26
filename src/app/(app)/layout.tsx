@@ -13,7 +13,7 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter();
   const pathname = usePathname();
-  const { load } = useUser();
+  const { load, user } = useUser();
   const checked  = useRef(false);
 
   useEffect(() => {
@@ -34,6 +34,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const done =
+      user.adherence?.commitmentCompletedAt != null || user.adherence?.commitmentSkipped;
+    if (done) return;
+    if (pathname === "/commitment") return;
+    router.replace("/commitment");
+  }, [user, pathname, router]);
 
   return (
     <div className="mx-auto w-full max-w-md safe-top">

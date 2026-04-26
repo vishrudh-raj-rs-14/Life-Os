@@ -1,5 +1,11 @@
 import type { Difficulty, Goal, Habit, Log, Session } from "@/types";
-import { differenceInCalendarDays, parseISO, startOfWeek } from "date-fns";
+import {
+  differenceInCalendarDays,
+  parseISO,
+  setHours,
+  setMinutes,
+  startOfWeek,
+} from "date-fns";
 
 // ─── Levels ──────────────────────────────────────────────────────────────────
 
@@ -53,18 +59,82 @@ export function levelFromXp(totalXp: number): {
 
 // XP awarded for completing (or partially completing) a habit log.
 // `value` is interpreted in the habit's unit (count/duration/binary/checklist).
+/** Parse "HH:mm" to minutes since midnight; undefined if invalid. */
+export function parseScheduledMinutes(hhmm: string | undefined): number | undefined {
+  if (!hhmm) return undefined;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return undefined;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return undefined;
+  return h * 60 + min;
+}
+
+export type ScheduleXpTier = "none" | "in_window" | "late";
+
+/** In-window = within grace of scheduled clock time (early counts as in-window). */
+export function scheduleXpTier(
+  habit: Habit,
+  logTimeMs: number,
+  graceMinutes: number
+): ScheduleXpTier {
+  if (!habit.scheduledTime) return "none";
+  const sched = parseScheduledMinutes(habit.scheduledTime);
+  if (sched === undefined) return "none";
+  const d = new Date(logTimeMs);
+  const logMin = d.getHours() * 60 + d.getMinutes();
+  let diff = logMin - sched;
+  if (diff > 12 * 60) diff -= 24 * 60;
+  if (diff < -12 * 60) diff += 24 * 60;
+  const g = Math.max(15, Math.min(120, graceMinutes));
+  if (diff <= g) return "in_window";
+  return "late";
+}
+
+export function xpForHabitWithSchedule(
+  habit: Habit,
+  value: number,
+  logTimeMs: number,
+  graceMinutes: number
+): number {
+  const base = xpForHabit(habit, value);
+  const tier = scheduleXpTier(habit, logTimeMs, graceMinutes);
+  if (tier === "in_window") return Math.round(base * 1.12);
+  if (tier === "late") return Math.round(base * 0.92);
+  return base;
+}
+
 /** Max XP achievable today from one habit when fully satisfied (drives daily bar cap). */
-export function maxDailyXpForHabit(habit: Habit): number {
+export function maxDailyXpForHabit(
+  habit: Habit,
+  opts?: { todayISO?: string; graceMinutes?: number }
+): number {
+  const grace = opts?.graceMinutes ?? 45;
+  const today = opts?.todayISO;
+  let maxVal = 1;
   switch (habit.kind) {
     case "binary":
-      return xpForHabit(habit, 1);
+      maxVal = 1;
+      break;
     case "count":
     case "duration":
     case "checklist":
-      return xpForHabit(habit, Math.max(1, habit.target ?? 1));
+      maxVal = Math.max(1, habit.target ?? 1);
+      break;
     default:
-      return xpForHabit(habit, 1);
+      maxVal = 1;
   }
+  if (!habit.scheduledTime || !today) {
+    return xpForHabit(habit, maxVal);
+  }
+  const [y, mo, d] = today.split("-").map(Number);
+  const day = new Date(y, mo - 1, d);
+  const sm = parseScheduledMinutes(habit.scheduledTime);
+  if (sm === undefined) return xpForHabit(habit, maxVal);
+  const h = Math.floor(sm / 60);
+  const mi = sm % 60;
+  const atSched = setMinutes(setHours(day, h), mi).getTime();
+  return xpForHabitWithSchedule(habit, maxVal, atSched, grace);
 }
 
 /** Sum of log XP today that counts toward the daily bar (only habits due today). */
@@ -286,4 +356,40 @@ export function habitDoneToday(
 // Days since a date (ISO)
 export function daysSince(iso: string, asOf: Date = new Date()): number {
   return differenceInCalendarDays(asOf, parseISO(iso));
+}
+
+/** Monday `yyyy-MM-dd` of the ISO week containing `d` (local calendar). */
+export function isoWeekMondayString(d: Date = new Date()): string {
+  const ws = startOfWeek(d, { weekStartsOn: 1 });
+  return format(ws);
+}
+
+/** Monday string for the calendar week before the one containing `d`. */
+export function previousIsoWeekMondayString(d: Date = new Date()): string {
+  const ws = startOfWeek(d, { weekStartsOn: 1 });
+  const prev = new Date(ws.getTime() - 7 * 86400000);
+  return format(prev);
+}
+
+/** Every day Mon–Sun had 100% of that day’s due habits completed. */
+export function wasPerfectIsoWeek(
+  habits: Habit[],
+  logs: Log[],
+  weekMondayStr: string
+): boolean {
+  const [y, mo, d0] = weekMondayStr.split("-").map(Number);
+  const start = new Date(y, mo - 1, d0);
+  let anyDue = false;
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(start.getTime() + i * 86400000);
+    const ds = format(day);
+    const due = habits.filter(
+      (h) => !h.archived && !h.deletedAt && isHabitDueToday(h, day)
+    );
+    if (due.length === 0) continue;
+    anyDue = true;
+    const done = due.filter((h) => habitDoneToday(h, logs, ds).done).length;
+    if (done < due.length) return false;
+  }
+  return anyDue;
 }

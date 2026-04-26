@@ -28,7 +28,7 @@ import {
 } from "@/lib/utils";
 import {
   isHabitDueToday,
-  xpForHabit,
+  xpForHabitWithSchedule,
 } from "@/lib/engine";
 import { toast } from "@/components/ui/Toast";
 import { useFocusMediaSession } from "@/hooks/useFocusMediaSession";
@@ -40,7 +40,7 @@ function FocusInner() {
   const params = useSearchParams();
   const router = useRouter();
   const timer = useTimer();
-  const { awardXp, bumpStreak } = useUser();
+  const { awardXp, bumpStreak, user } = useUser();
 
   const [now, setNow] = useState(() => Date.now());
   const [chosenGoalId, setChosenGoalId] = useState<string | undefined>(
@@ -154,10 +154,11 @@ function FocusInner() {
           h.kind === "duration"
       )
       .toArray();
+    const grace = user?.adherence?.scheduleGraceMinutes ?? 45;
     for (const h of habits) {
       if (!isHabitDueToday(h)) continue;
-      const habitXp = xpForHabit(h, result.minutes);
       const lt = nowMs();
+      const habitXp = xpForHabitWithSchedule(h, result.minutes, lt, grace);
       const logRow = {
         id: nanoid(),
         userId,

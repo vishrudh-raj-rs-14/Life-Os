@@ -7,8 +7,12 @@ import { startSyncLoop } from "@/lib/social/sync";
 import { db } from "@/lib/db/dexie";
 import { getRepo } from "@/lib/repo";
 import { startAuthCache } from "@/lib/auth";
+import { previousIsoWeekMondayString, wasPerfectIsoWeek } from "@/lib/engine";
 
 const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+
+/** Serialize perfect-week scoring so Strict Mode / double effects cannot double-grant freezes. */
+let perfectWeekEvalChain: Promise<void> = Promise.resolve();
 
 // Convert a base64 URL string to a Uint8Array (required by pushManager.subscribe)
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -87,6 +91,44 @@ export function AppBoot() {
     void subscribeToPush();
   }, [user]);
 
+  // Prior ISO week: perfect-week streak + earn-back freezes (every 2 perfect weeks).
+  useEffect(() => {
+    if (!user) return;
+    perfectWeekEvalChain = perfectWeekEvalChain.then(async () => {
+      try {
+        const prevMon = previousIsoWeekMondayString(new Date());
+        const key = `perfect:${prevMon}`;
+        if (useUser.getState().user?.adherence?.lastPerfectWeekEvaluatedKey === key) return;
+
+        const d = db();
+        const habitsArr = await d.habits.filter((h) => !h.archived && !h.deletedAt).toArray();
+        const logsArr = await d.logs.toArray();
+
+        const perfect = wasPerfectIsoWeek(habitsArr, logsArr, prevMon);
+        let u = useUser.getState().user;
+        if (!u) return;
+        if (u.adherence?.lastPerfectWeekEvaluatedKey === key) return;
+        const prevStreak = u.adherence?.perfectWeekStreak ?? 0;
+        const newStreak = perfect ? prevStreak + 1 : 0;
+        const grant = perfect && newStreak >= 2 && newStreak % 2 === 0;
+
+        u = {
+          ...u,
+          adherence: {
+            ...u.adherence,
+            lastPerfectWeekEvaluatedKey: key,
+            perfectWeekStreak: newStreak,
+          },
+          updatedAt: Date.now(),
+        };
+        await useUser.getState().setUser(u);
+        if (grant) await useUser.getState().grantStreakFreezes(1);
+      } catch {
+        /* ignore */
+      }
+    });
+  }, [user?.userId]);
+
   // Cloud-first bootstrap: after login, pull core tables from Supabase into Dexie cache.
   useEffect(() => {
     if (!user) return;
@@ -95,14 +137,35 @@ export function AppBoot() {
     void (async () => {
       try {
         const d = db();
-        const [localHabits, localLogs, localSessions, localReminders] = await Promise.all([
+        const [
+          localHabits,
+          localLogs,
+          localSessions,
+          localReminders,
+          localBody,
+          localVoice,
+          localGoalEntries,
+        ] = await Promise.all([
           d.habits.where("userId").equals(user.userId).count(),
           d.logs.where("userId").equals(user.userId).count(),
           d.sessions.where("userId").equals(user.userId).count(),
           d.reminders.where("userId").equals(user.userId).count(),
+          d.bodyLogs.where("userId").equals(user.userId).count(),
+          d.voiceNotes.where("userId").equals(user.userId).count(),
+          d.goalEntries.where("userId").equals(user.userId).count(),
         ]);
 
-        if (localHabits + localLogs + localSessions + localReminders > 0) return;
+        if (
+          localHabits +
+            localLogs +
+            localSessions +
+            localReminders +
+            localBody +
+            localVoice +
+            localGoalEntries >
+          0
+        )
+          return;
 
         const repo = await getRepo();
         await Promise.all([
@@ -110,13 +173,16 @@ export function AppBoot() {
           repo.listLogs(),
           repo.listSessions(),
           repo.listReminders(),
+          repo.listBodyLogs(),
+          repo.listVoiceNotes(),
+          repo.listGoalEntries(),
         ]);
       } catch {
         bootstrappedUserId.current = null;
         /* offline / supabase unavailable */
       }
     })();
-  }, [user?.userId]);
+  }, [user]);
 
   return null;
 }

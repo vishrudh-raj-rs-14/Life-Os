@@ -2,10 +2,12 @@ import { db } from "@/lib/db/dexie";
 import type {
   Achievement,
   AccountabilityStake,
+  BodyLog,
   Duel,
   FeedEvent,
   Friendship,
   Goal,
+  GoalEntry,
   Habit,
   Log,
   Nudge,
@@ -16,6 +18,7 @@ import type {
   Tracker,
   TrackerEntry,
   UserProfile,
+  VoiceNote,
 } from "@/types";
 import type { Repository } from "./index";
 
@@ -153,6 +156,44 @@ export class DexieRepository implements Repository {
     await db().trackerEntries.delete(id);
   }
 
+  // body logs
+  async listBodyLogs() {
+    return db().bodyLogs.orderBy("date").reverse().toArray();
+  }
+  async upsertBodyLog(log: BodyLog) {
+    await db().bodyLogs.put(stamp(log));
+  }
+  async deleteBodyLog(id: string) {
+    await db().bodyLogs.delete(id);
+  }
+
+  // voice notes
+  async listVoiceNotes() {
+    const all = await db().voiceNotes.orderBy("createdAt").reverse().toArray();
+    return all.filter((n) => !n.deletedAt);
+  }
+  async upsertVoiceNote(note: VoiceNote) {
+    await db().voiceNotes.put(stamp(note));
+  }
+  async deleteVoiceNote(id: string) {
+    await db().voiceNotes.delete(id);
+  }
+
+  // goal journal entries
+  async listGoalEntries(opts?: { habitId?: string }) {
+    const all = await db().goalEntries.orderBy("createdAt").reverse().toArray();
+    return all.filter(
+      (e) =>
+        (!opts?.habitId || e.habitId === opts.habitId) && !e.deletedAt
+    );
+  }
+  async upsertGoalEntry(entry: GoalEntry) {
+    await db().goalEntries.put(stamp(entry));
+  }
+  async deleteGoalEntry(id: string) {
+    await db().goalEntries.delete(id);
+  }
+
   // social
   async listFriendships() {
     return db().friendships.toArray();
@@ -216,6 +257,11 @@ export class DexieRepository implements Repository {
       duels: await d.duels.toArray(),
       feed: await d.feed.toArray(),
       nudges: await d.nudges.toArray(),
+      trackers: await d.trackers.toArray(),
+      trackerEntries: await d.trackerEntries.toArray(),
+      bodyLogs: await d.bodyLogs.toArray(),
+      voiceNotes: await d.voiceNotes.toArray(),
+      goalEntries: await d.goalEntries.toArray(),
     };
   }
 
@@ -229,6 +275,12 @@ export class DexieRepository implements Repository {
     if (data.achievements)
       await d.achievements.bulkPut(data.achievements as Achievement[]);
     if (data.reminders) await d.reminders.bulkPut(data.reminders as Reminder[]);
+    if (data.trackers) await d.trackers.bulkPut(data.trackers as Tracker[]);
+    if (data.trackerEntries)
+      await d.trackerEntries.bulkPut(data.trackerEntries as TrackerEntry[]);
+    if (data.bodyLogs) await d.bodyLogs.bulkPut(data.bodyLogs as BodyLog[]);
+    if (data.voiceNotes) await d.voiceNotes.bulkPut(data.voiceNotes as VoiceNote[]);
+    if (data.goalEntries) await d.goalEntries.bulkPut(data.goalEntries as GoalEntry[]);
   }
 
   async clearAll() {

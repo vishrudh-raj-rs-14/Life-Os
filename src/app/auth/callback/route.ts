@@ -7,12 +7,7 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
 
-  // Production URL — prefer the explicit env var over the request origin
-  // so that if the callback is somehow hit on a preview URL we still land
-  // on the right place.
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    origin;
+  const siteUrl = origin;
 
   if (!code) {
     return NextResponse.redirect(`${siteUrl}/login?error=no_code`);

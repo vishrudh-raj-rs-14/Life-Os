@@ -10,6 +10,8 @@ export interface ToneTemplate {
   recapAll: (count: number) => string;
   recapMiss: (missed: number, total: number) => string;
   celebration: (count: number) => string;
+  /** End-of-day nudge: still-open habits (recovery, low guilt). */
+  closeTheLoop: (open: number) => string;
 }
 
 const TONE_TEMPLATES: Record<Tone, ToneTemplate> = {
@@ -21,13 +23,15 @@ const TONE_TEMPLATES: Record<Tone, ToneTemplate> = {
     midday: (done, total) =>
       `${done}/${total} done so far. Afternoon is yours — use it.`,
     streakRisk: (streak, missed) =>
-      `${missed} habit${missed === 1 ? "" : "s"} left. Your ${streak}-day streak is on the line.`,
+      `${missed} open — your ${streak}-day streak still has time. Pick the smallest next step.`,
     dayAfterMiss: (missed) =>
-      `${missed} habit${missed === 1 ? "" : "s"} missed yesterday. Today is the reset — don't waste it.`,
+      `${missed} habit${missed === 1 ? "" : "s"} didn’t land yesterday. Resume at your next anchor — no pile-on.`,
     recapAll: (c) => `${c} quests cleared. Rest well. Tomorrow we go again.`,
     recapMiss: (m, t) =>
       `${t - m}/${t} today. Tomorrow is a clean slate — set your alarm.`,
     celebration: (c) => `🔥 ${c} habits crushed today.`,
+    closeTheLoop: (open) =>
+      `${open} still open — two taps on Today closes the loop. Consistency beats perfection.`,
   },
 
   "drill-sergeant": {
@@ -45,6 +49,8 @@ const TONE_TEMPLATES: Record<Tone, ToneTemplate> = {
     recapMiss: (m, t) =>
       `${m}/${t} missed. Unacceptable. Set the alarm. Try again.`,
     celebration: (c) => `${c} done. Don't get comfortable.`,
+    closeTheLoop: (open) =>
+      `${open} incomplete. Finish tonight or carry the gap — your call. Move.`,
   },
 
   wise: {
@@ -56,13 +62,15 @@ const TONE_TEMPLATES: Record<Tone, ToneTemplate> = {
     midday: (done, total) =>
       `${done} of ${total} complete. The afternoon is still yours to shape.`,
     streakRisk: (streak, missed) =>
-      `${streak} days of showing up. ${missed} habit${missed === 1 ? "" : "s"} remain. What you do in the next hour defines the pattern.`,
+      `${streak} days of showing up. ${missed} habit${missed === 1 ? "" : "s"} remain — pick one gentle anchor before sleep.`,
     dayAfterMiss: (missed) =>
-      `${missed} missed yesterday. Notice without judgment. The practice begins again now.`,
+      `${missed} habit${missed === 1 ? "" : "s"} slipped yesterday. Return at the next natural pause; shame isn’t part of this.`,
     recapAll: () => `You showed up. That, repeated, is everything.`,
     recapMiss: (m, t) =>
       `${t - m}/${t}. Notice without judgment. Adjust tomorrow.`,
     celebration: (c) => `${c} small acts. Compounded, they become a life.`,
+    closeTheLoop: (open) =>
+      `${open} still undone. When you’re ready, Today is two taps away — close the loop calmly.`,
   },
 };
 

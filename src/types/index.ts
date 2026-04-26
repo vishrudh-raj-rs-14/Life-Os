@@ -60,6 +60,21 @@ export interface Goal {
   deletedAt?: number;
 }
 
+/** Progressive target (e.g. wake time −15m/week). Updates `scheduledTime` when accepted. */
+export interface HabitRamp {
+  enabled: boolean;
+  /** Final anchor time HH:mm */
+  targetTime: string;
+  /** Minutes earlier per step (default 15) */
+  stepMinutes: number;
+  mode: "weekly" | "after_streak";
+  /** For `after_streak`: successes needed before next step */
+  afterStreakDays?: number;
+  lastAdjustedWeekKey?: string;
+  /** Consecutive successful logs while at current window (for after_streak) */
+  successStreakDays?: number;
+}
+
 export interface Habit {
   id: string;
   userId: string;
@@ -78,10 +93,37 @@ export interface Habit {
   difficulty: Difficulty;
   weeklyTarget?: number; // desired completions per week (overrides cadence-derived count in displays)
   area?: LifeArea;       // life area for grouping
+  ramp?: HabitRamp;
   archived: 0 | 1;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
+}
+
+/** Commitment, weekly check-in, schedule UX, optional accountability (synced via adherence_json). */
+export interface AdherenceProfile {
+  commitmentHabitIds?: string[];
+  commitmentWhy?: string;
+  commitmentRepair?: string;
+  /** Set when user completes or skips the commitment step */
+  commitmentCompletedAt?: number;
+  commitmentSkipped?: boolean;
+  /** ISO week key `yyyy-Www` of last submitted weekly review */
+  weeklyReviewWeekKey?: string;
+  weeklyReviewResponse?: "yes" | "partial" | "no";
+  weeklyReviewNote?: string;
+  /** ±minutes around scheduledTime for on-time XP bonus (default 45 in UI) */
+  scheduleGraceMinutes?: number;
+  /** Consecutive “perfect” ISO weeks (100% due habits each day) for earn-back freezes */
+  perfectWeekStreak?: number;
+  /** `perfect:${yyyy-MM-dd}` Monday of last scored prior week */
+  lastPerfectWeekEvaluatedKey?: string;
+  /** Partner / squad can see weekly scorecard (opt-in, honor-system UI) */
+  showWeeklyScorecardToPartner?: boolean;
+  /** Last time user exported JSON (ms) */
+  lastDataExportAt?: number;
+  /** Client-updated when a successful cloud list sync runs */
+  lastCloudSyncAt?: number;
 }
 
 export interface Log {
@@ -160,6 +202,8 @@ export interface UserProfile {
   isPublic: 0 | 1;
   tone: Tone;
   onboardedAt?: number;
+  /** Habit adherence, reviews, trust metadata (mirrors user_profile.adherence_json) */
+  adherence?: AdherenceProfile;
   createdAt: number;
   updatedAt: number;
   /** yyyy-MM-dd — day for which `dailyBonusXp` was last applied (reversible until midnight) */
@@ -272,6 +316,8 @@ export interface BodyLog {
   notes?: string;
   blob?: Blob;       // progress photo stored in IndexedDB
   mimeType?: string;
+  /** R2 object key when synced (`{authUserId}/body/{id}.ext`) */
+  photoStorageKey?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -285,6 +331,8 @@ export interface GoalEntry {
   text?: string;
   blob?: Blob;     // photo stored directly in IndexedDB
   mimeType?: string;
+  /** R2 object key when synced */
+  photoStorageKey?: string;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -296,8 +344,12 @@ export interface VoiceNote {
   userId: string;
   title?: string;
   duration: number; // seconds
-  blob: Blob;       // audio blob stored directly in IndexedDB
+  /** Local cache; optional when only `audioStorageKey` is hydrated from cloud */
+  blob?: Blob;
   date: string;     // yyyy-MM-dd
+  /** R2 object key when synced */
+  audioStorageKey?: string;
+  mimeType?: string;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;

@@ -1,10 +1,12 @@
 import type {
   Achievement,
   AccountabilityStake,
+  BodyLog,
   Duel,
   FeedEvent,
   Friendship,
   Goal,
+  GoalEntry,
   Habit,
   Log,
   Nudge,
@@ -15,6 +17,7 @@ import type {
   Tracker,
   TrackerEntry,
   UserProfile,
+  VoiceNote,
 } from "@/types";
 
 export interface Repository {
@@ -60,6 +63,21 @@ export interface Repository {
   listTrackerEntries(opts?: { trackerId?: string }): Promise<TrackerEntry[]>;
   upsertTrackerEntry(e: TrackerEntry): Promise<void>;
   deleteTrackerEntry(id: string): Promise<void>;
+
+  // body logs
+  listBodyLogs(): Promise<BodyLog[]>;
+  upsertBodyLog(log: BodyLog): Promise<void>;
+  deleteBodyLog(id: string): Promise<void>;
+
+  // voice notes
+  listVoiceNotes(): Promise<VoiceNote[]>;
+  upsertVoiceNote(note: VoiceNote): Promise<void>;
+  deleteVoiceNote(id: string): Promise<void>;
+
+  // goal journal entries
+  listGoalEntries(opts?: { habitId?: string }): Promise<GoalEntry[]>;
+  upsertGoalEntry(entry: GoalEntry): Promise<void>;
+  deleteGoalEntry(id: string): Promise<void>;
 
   // social (cloud-only operations are no-ops in local impl)
   listFriendships(): Promise<Friendship[]>;

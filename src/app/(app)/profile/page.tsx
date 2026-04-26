@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as Icons from "lucide-react";
 import { db } from "@/lib/db/dexie";
@@ -16,7 +15,6 @@ import { LOCAL_USER_ID, cn } from "@/lib/utils";
 import { Activity, CalendarCheck2, Settings, Share2, Users } from "lucide-react";
 
 export default function ProfilePage() {
-  const router = useRouter();
   const { user, load } = useUser();
   useEffect(() => void load(), [load]);
 
@@ -171,19 +169,6 @@ export default function ProfilePage() {
           Open weekly review
         </Button>
       </Link>
-
-      <Button
-        variant="ghost"
-        className="w-full text-[var(--danger)]"
-        onClick={async () => {
-          if (!confirm("Reset everything? This cannot be undone.")) return;
-          const repo = (await import("@/lib/repo")).getRepo;
-          await (await repo()).clearAll();
-          router.replace("/onboarding");
-        }}
-      >
-        Reset all data
-      </Button>
     </div>
   );
 }
