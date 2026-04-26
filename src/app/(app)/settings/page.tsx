@@ -222,10 +222,13 @@ export default function SettingsPage() {
     try {
       const { supabaseBrowser } = await import("@/lib/supabase/client");
       const sb = supabaseBrowser();
-      const authUser = await ensureAuthUser();
+      const authUser = await ensureAuthUser({ force: true });
+      if (!authUser?.id) {
+        throw new Error("Reset requires a signed-in Google account.");
+      }
       const email = authUser?.email ?? cloudUser;
       const shouldSeedVishrudh = shouldSeedVishrudhProfile(email, user?.handle);
-      const authUserId = authUser?.id ?? user!.userId;
+      const authUserId = authUser.id;
       const t = Date.now();
       const resetUser = {
         ...user!,
@@ -274,10 +277,9 @@ export default function SettingsPage() {
         });
         if (error) throw error;
       }
-      await db().delete();
-      await setUser(resetUser);
-
       if (shouldSeedVishrudh) await seedVishrudh(authUserId);
+      await waitForWrites();
+      await db().delete();
       window.location.reload();
     } finally {
       setResetting(false);

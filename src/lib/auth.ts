@@ -22,8 +22,8 @@ export function getCachedAuthUser() {
   return cachedUser ?? null;
 }
 
-export async function ensureAuthUser(): Promise<CachedAuthUser | null> {
-  if (cachedUser !== undefined) return cachedUser;
+export async function ensureAuthUser(opts?: { force?: boolean }): Promise<CachedAuthUser | null> {
+  if (!opts?.force && cachedUser !== undefined) return cachedUser;
   if (initPromise) return initPromise;
 
   const sb = supabaseBrowser();
