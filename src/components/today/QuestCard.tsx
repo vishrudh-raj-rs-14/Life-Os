@@ -12,8 +12,6 @@ interface Props {
   done: boolean;
   progress: number;
   xp: number;
-  /** Explains what “done” means today (trust / clarity). */
-  doneHint?: string;
   optional?: boolean;       // alt-day habit on an off day — shown but not forced
   todayStepsMask?: number[]; // for checklist
   recent: Array<{ date: string; value: number; target: number }>;
@@ -29,7 +27,6 @@ export function QuestCard({
   done,
   progress,
   xp,
-  doneHint,
   todayStepsMask,
   recent,
   onLog,
@@ -78,11 +75,6 @@ export function QuestCard({
             {habit.scheduledTime && habit.cue && <span>·</span>}
             {habit.cue && <span className="truncate normal-case tracking-normal">{habit.cue}</span>}
           </div>
-          {doneHint && (
-            <p className="text-[10px] text-[var(--ink-3)] leading-snug normal-case tracking-normal mt-1">
-              {doneHint}
-            </p>
-          )}
         </div>
         <div
           className={cn(

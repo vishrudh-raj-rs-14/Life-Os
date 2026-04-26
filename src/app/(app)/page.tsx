@@ -17,7 +17,6 @@ import { LevelUpOverlay } from "@/components/LevelUpOverlay";
 import { GoalsList } from "@/components/goals/GoalsList";
 import { WeeklyReviewCard } from "@/components/today/WeeklyReviewCard";
 import { RampWeekPrompt } from "@/components/today/RampWeekPrompt";
-import { habitDoneHint } from "@/lib/adherence/doneHints";
 import {
   dailyXpEarnedFromLogs,
   habitDoneToday,
@@ -368,18 +367,15 @@ export default function TodayPage() {
         </div>
       ) : (
       <>
-      {(user.adherence?.commitmentCompletedAt != null ||
-        user.adherence?.commitmentSkipped) && (
-        <div className="px-5 space-y-3">
-          <WeeklyReviewCard
-            adherence={user.adherence}
-            onSave={async (next) => {
-              await setUser({ ...user, adherence: next, updatedAt: Date.now() });
-            }}
-          />
-          <RampWeekPrompt habits={habits} />
-        </div>
-      )}
+      <div className="px-5 space-y-3">
+        <WeeklyReviewCard
+          adherence={user.adherence}
+          onSave={async (next) => {
+            await setUser({ ...user, adherence: next, updatedAt: Date.now() });
+          }}
+        />
+        <RampWeekPrompt habits={habits} />
+      </div>
       {timer.goalId && timer.startedAt && activeGoal && (
         <div className="px-5">
           {/* Timer UI reads pause/elapsed from useTimer inside the card */}
@@ -423,7 +419,6 @@ export default function TodayPage() {
                     done={h.id in optimisticDone ? optimisticDone[h.id] : done}
                     progress={progress}
                     xp={maxDailyXpForHabit(h, { todayISO: today, graceMinutes })}
-                    doneHint={habitDoneHint(h, graceMinutes)}
                     todayStepsMask={todayLog?.steps}
                     recent={stripFor(h)}
                     onLog={(delta) => void enqueueHabitOp(h.id, () => logQuantity(h, delta))}
@@ -462,7 +457,6 @@ export default function TodayPage() {
                         done={h.id in optimisticDone ? optimisticDone[h.id] : done}
                         progress={progress}
                         xp={maxDailyXpForHabit(h, { todayISO: today, graceMinutes })}
-                        doneHint={habitDoneHint(h, graceMinutes)}
                         todayStepsMask={todayLog?.steps}
                         recent={stripFor(h)}
                         onLog={(delta) => void enqueueHabitOp(h.id, () => logQuantity(h, delta))}
