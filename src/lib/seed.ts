@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import type { ClassName, Goal, Habit, Tracker, UserProfile } from "@/types";
 import { LOCAL_USER_ID } from "@/lib/utils";
 import { getRepo } from "@/lib/repo";
+import { ensureAuthUser } from "@/lib/auth";
 
 const VISHRUDH_SEED_EMAILS = new Set([
   "vishrudh.shrinivas@gmail.com",
@@ -256,18 +257,7 @@ export async function seedStarter(opts: SeedOpts) {
   const t = Date.now();
   // Cloud-first: prefer Supabase auth uid as the stable per-account user id.
   // Falls back to LOCAL_USER_ID for offline/local dev.
-  const authUid = await (async () => {
-    try {
-      const { supabaseBrowser } = await import("@/lib/supabase/client");
-      const sb = supabaseBrowser();
-      if (!sb) return undefined;
-      const { data } = await sb.auth.getUser();
-      return data.user?.id ?? undefined;
-    } catch {
-      return undefined;
-    }
-  })();
-  const userId = authUid ?? LOCAL_USER_ID;
+  const userId = (await ensureAuthUser())?.id ?? LOCAL_USER_ID;
 
   const profile: UserProfile = {
     userId,
@@ -341,18 +331,7 @@ export async function seedStarter(opts: SeedOpts) {
 
 export async function seedVishrudh(userIdOverride?: string) {
   const t = Date.now();
-  const authUid = userIdOverride ?? await (async () => {
-    try {
-      const { supabaseBrowser } = await import("@/lib/supabase/client");
-      const sb = supabaseBrowser();
-      if (!sb) return undefined;
-      const { data } = await sb.auth.getUser();
-      return data.user?.id ?? undefined;
-    } catch {
-      return undefined;
-    }
-  })();
-  const userId = authUid ?? LOCAL_USER_ID;
+  const userId = userIdOverride ?? (await ensureAuthUser())?.id ?? LOCAL_USER_ID;
 
   const habits: Omit<Habit, "id">[] = [
     {

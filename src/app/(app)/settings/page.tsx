@@ -19,9 +19,12 @@ import { Button } from "@/components/ui/Button";
 import { Label, Select } from "@/components/ui/Input";
 import { ensurePermission } from "@/lib/notifications/scheduler";
 import { getRepo } from "@/lib/repo";
+import { db } from "@/lib/db/dexie";
 import { STREAK_THRESHOLD } from "@/lib/engine";
 import type { Tone } from "@/types";
 import { seedVishrudh, shouldSeedVishrudhProfile } from "@/lib/seed";
+import { ensureAuthUser } from "@/lib/auth";
+import { waitForWrites } from "@/lib/sync/writeQueue";
 
 // ─── Platform detection helpers ──────────────────────────────────────────────
 
@@ -157,16 +160,7 @@ export default function SettingsPage() {
         reg.pushManager.getSubscription().then(sub => setSubscribed(!!sub))
       );
     }
-    // check Google session via new Supabase browser client
-    void import("@/lib/supabase/client").then(({ supabaseBrowser }) => {
-      const sb = supabaseBrowser();
-      if (sb) {
-        sb.auth.getUser().then(({ data }: { data: { user: { email?: string; user_metadata?: Record<string, string> } | null } }) => {
-          const u = data.user;
-          setCloudUser(u?.email ?? u?.user_metadata?.email ?? null);
-        });
-      }
-    });
+    void ensureAuthUser().then((u) => setCloudUser(u?.email ?? null));
   }, [load]);
 
   if (!user) return null;
@@ -226,13 +220,12 @@ export default function SettingsPage() {
     if (!confirm("Delete EVERYTHING and restart from scratch? This cannot be undone.")) return;
     setResetting(true);
     try {
-      const repo = await getRepo();
       const { supabaseBrowser } = await import("@/lib/supabase/client");
       const sb = supabaseBrowser();
-      const { data } = sb ? await sb.auth.getUser() : { data: { user: null } };
-      const email = data.user?.email ?? cloudUser;
+      const authUser = await ensureAuthUser();
+      const email = authUser?.email ?? cloudUser;
       const shouldSeedVishrudh = shouldSeedVishrudhProfile(email, user?.handle);
-      const authUserId = data.user?.id ?? user!.userId;
+      const authUserId = authUser?.id ?? user!.userId;
       const t = Date.now();
       const resetUser = {
         ...user!,
@@ -247,14 +240,26 @@ export default function SettingsPage() {
         updatedAt: t,
       };
 
-      await repo.clearAll();
+      await waitForWrites();
       if (sb) {
+        // Delete child rows directly by the authenticated account id.
+        // This avoids stale local profile ids making reset a no-op.
+        await sb.from("logs").delete().eq("user_id", authUserId);
+        await sb.from("sessions").delete().eq("user_id", authUserId);
+        await sb.from("reminders").delete().eq("user_id", authUserId);
+        await sb.from("tracker_entries").delete().eq("user_id", authUserId);
+        await sb.from("trackers").delete().eq("user_id", authUserId);
+        await sb.from("achievements").delete().eq("user_id", authUserId);
+        await sb.from("habits").delete().eq("user_id", authUserId);
+        await sb.from("goals").delete().eq("user_id", authUserId);
+
         const { error } = await sb.from("user_profile").upsert({
           id: authUserId,
           auth_user_id: authUserId,
           handle: resetUser.handle,
           display_name: resetUser.displayName,
           class_name: resetUser.className,
+          level: 1,
           tone: resetUser.tone,
           total_xp: 0,
           streak_days: 0,
@@ -269,11 +274,11 @@ export default function SettingsPage() {
         });
         if (error) throw error;
       }
+      await db().delete();
       await setUser(resetUser);
 
       if (shouldSeedVishrudh) await seedVishrudh(authUserId);
-      await load();
-      window.location.href = "/";
+      window.location.reload();
     } finally {
       setResetting(false);
     }

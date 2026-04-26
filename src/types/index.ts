@@ -186,6 +186,7 @@ export interface Reminder {
   enabled: 0 | 1;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
 }
 
 // --- social ---

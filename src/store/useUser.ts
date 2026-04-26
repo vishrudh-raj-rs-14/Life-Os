@@ -11,16 +11,31 @@ import {
 } from "@/lib/engine";
 import { todayISO } from "@/lib/utils";
 
-let profileSyncTimer: ReturnType<typeof setTimeout> | undefined;
+type DailyBonusResult = {
+  delta: number;
+  desiredBonus: number;
+  earned: number;
+  cap: number;
+  leveledUp: boolean;
+  newLevel: number;
+};
 
-function scheduleProfileSync(user: UserProfile) {
-  if (profileSyncTimer) clearTimeout(profileSyncTimer);
-  profileSyncTimer = setTimeout(() => {
-    profileSyncTimer = undefined;
-    void getRepo()
-      .then((repo) => repo.upsertUser(user))
-      .catch(() => {});
-  }, 700);
+const NO_DAILY_BONUS_CHANGE: DailyBonusResult = {
+  delta: 0,
+  desiredBonus: 0,
+  earned: 0,
+  cap: 0,
+  leveledUp: false,
+  newLevel: 1,
+};
+
+let dailyBonusTimer: ReturnType<typeof setTimeout> | undefined;
+let resolvePendingDailyBonus: ((value: DailyBonusResult) => void) | undefined;
+
+function queueProfileSync(user: UserProfile) {
+  void getRepo()
+    .then((repo) => repo.upsertUser(user))
+    .catch(() => {});
 }
 
 interface UserState {
@@ -35,14 +50,7 @@ interface UserState {
     today: string,
     dueHabits: Habit[],
     todayLogs: Log[]
-  ) => Promise<{
-    delta: number;
-    desiredBonus: number;
-    earned: number;
-    cap: number;
-    leveledUp: boolean;
-    newLevel: number;
-  }>;
+  ) => Promise<DailyBonusResult>;
 }
 
 export const useUser = create<UserState>((set, get) => ({
@@ -59,112 +67,134 @@ export const useUser = create<UserState>((set, get) => ({
     await repo.upsertUser(u);
   },
   async awardXp(amount) {
-    const repo = get().user ? undefined : await getRepo();
-    const u = get().user ?? (await repo!.getUser())!;
-    const before = levelFromXp(u.totalXp).level;
-    const totalXp = u.totalXp + amount;
-    const after = levelFromXp(totalXp).level;
-    const updated: UserProfile = {
-      ...u,
-      totalXp,
-      level: after,
-      updatedAt: Date.now(),
-    };
-    set({ user: updated });
-    scheduleProfileSync(updated);
-    return { leveledUp: after > before, newLevel: after };
-  },
-  async bumpStreak() {
-    const repo = get().user ? undefined : await getRepo();
-    const u = get().user ?? (await repo!.getUser())!;
-    const today = todayISO();
-    if (u.lastActiveDate === today) return;
-    const yest = new Date();
-    yest.setDate(yest.getDate() - 1);
-    const yestStr = yest.toISOString().slice(0, 10);
-    const newStreak =
-      u.lastActiveDate === yestStr ? u.streakDays + 1 : 1;
-    const updated: UserProfile = {
-      ...u,
-      streakDays: newStreak,
-      lastActiveDate: today,
-      updatedAt: Date.now(),
-    };
-    set({ user: updated });
-    scheduleProfileSync(updated);
-    // ignore returned value to keep type loose; caller can re-read
-    void get();
-  },
-  async syncDailyXpBonus(today, dueHabits, todayLogs) {
-    const repo = get().user ? undefined : await getRepo();
-    let u = get().user ?? (await repo!.getUser());
-    if (!u) {
-      return {
-        delta: 0,
-        desiredBonus: 0,
-        earned: 0,
-        cap: 0,
-        leveledUp: false,
-        newLevel: 1,
-      };
-    }
+    if (!get().user) await get().load();
 
-    const dueIds = new Set(dueHabits.map((h) => h.id));
-    const cap = dueHabits.reduce((a, h) => a + maxDailyXpForHabit(h), 0);
-    const earned = dailyXpEarnedFromLogs(todayLogs, today, dueIds);
+    let result = { leveledUp: false, newLevel: 1 };
+    let updated: UserProfile | undefined;
 
-    // Clear stale bookkeeping from a previous calendar day (bonus stays in totalXp)
-    if (u.dailyBonusDate && u.dailyBonusDate !== today) {
-      u = {
+    set((state) => {
+      const u = state.user;
+      if (!u) return state;
+      const before = levelFromXp(u.totalXp).level;
+      const totalXp = Math.max(0, u.totalXp + amount);
+      const after = levelFromXp(totalXp).level;
+      updated = {
         ...u,
-        dailyBonusDate: undefined,
-        dailyBonusXp: undefined,
+        totalXp,
+        level: after,
         updatedAt: Date.now(),
       };
-      set({ user: u });
-      scheduleProfileSync(u);
-    }
+      result = { leveledUp: after > before, newLevel: after };
+      return { user: updated };
+    });
 
-    const tracked =
-      u.dailyBonusDate === today && typeof u.dailyBonusXp === "number"
-        ? u.dailyBonusXp
-        : 0;
-    const desiredBonus =
-      cap > 0 && earned >= cap ? dailyBarBonusAmount(cap) : 0;
-    const delta = desiredBonus - tracked;
+    if (updated) queueProfileSync(updated);
+    return result;
+  },
+  async bumpStreak() {
+    if (!get().user) await get().load();
 
-    if (delta === 0) {
-      return {
-        delta: 0,
-        desiredBonus,
-        earned,
-        cap,
-        leveledUp: false,
-        newLevel: levelFromXp(u.totalXp).level,
+    let updated: UserProfile | undefined;
+    set((state) => {
+      const u = state.user;
+      if (!u) return state;
+      const today = todayISO();
+      if (u.lastActiveDate === today) return state;
+      const yest = new Date();
+      yest.setDate(yest.getDate() - 1);
+      const yestStr = yest.toISOString().slice(0, 10);
+      updated = {
+        ...u,
+        streakDays: u.lastActiveDate === yestStr ? u.streakDays + 1 : 1,
+        lastActiveDate: today,
+        updatedAt: Date.now(),
       };
-    }
+      return { user: updated };
+    });
 
-    const before = levelFromXp(u.totalXp).level;
-    const totalXp = u.totalXp + delta;
-    const after = levelFromXp(totalXp).level;
-    const leveledUp = after > before;
-    const updated: UserProfile = {
-      ...u,
-      totalXp,
-      level: after,
-      dailyBonusDate: desiredBonus > 0 ? today : undefined,
-      dailyBonusXp: desiredBonus > 0 ? desiredBonus : undefined,
-      updatedAt: Date.now(),
-    };
-    set({ user: updated });
-    scheduleProfileSync(updated);
-    return {
-      delta,
-      desiredBonus,
-      earned,
-      cap,
-      leveledUp,
-      newLevel: after,
-    };
+    if (updated) queueProfileSync(updated);
+  },
+  async syncDailyXpBonus(today, dueHabits, todayLogs) {
+    if (dailyBonusTimer) clearTimeout(dailyBonusTimer);
+    resolvePendingDailyBonus?.(NO_DAILY_BONUS_CHANGE);
+
+    return new Promise<DailyBonusResult>((resolve) => {
+      resolvePendingDailyBonus = resolve;
+      dailyBonusTimer = setTimeout(() => {
+        dailyBonusTimer = undefined;
+        resolvePendingDailyBonus = undefined;
+
+        const dueIds = new Set(dueHabits.map((h) => h.id));
+        const cap = dueHabits.reduce((a, h) => a + maxDailyXpForHabit(h), 0);
+        const earned = dailyXpEarnedFromLogs(todayLogs, today, dueIds);
+        let response: DailyBonusResult = {
+          delta: 0,
+          desiredBonus: 0,
+          earned,
+          cap,
+          leveledUp: false,
+          newLevel: levelFromXp(get().user?.totalXp ?? 0).level,
+        };
+        let updated: UserProfile | undefined;
+
+        set((state) => {
+          let u = state.user;
+          if (!u) return state;
+
+          if (u.dailyBonusDate && u.dailyBonusDate !== today) {
+            u = {
+              ...u,
+              dailyBonusDate: undefined,
+              dailyBonusXp: undefined,
+              updatedAt: Date.now(),
+            };
+          }
+
+          const tracked =
+            u.dailyBonusDate === today && typeof u.dailyBonusXp === "number"
+              ? u.dailyBonusXp
+              : 0;
+          const desiredBonus =
+            cap > 0 && earned >= cap ? dailyBarBonusAmount(cap) : 0;
+          const delta = desiredBonus - tracked;
+
+          if (delta === 0 && u === state.user) {
+            response = {
+              delta: 0,
+              desiredBonus,
+              earned,
+              cap,
+              leveledUp: false,
+              newLevel: levelFromXp(u.totalXp).level,
+            };
+            return state;
+          }
+
+          const before = levelFromXp(u.totalXp).level;
+          const totalXp = Math.max(0, u.totalXp + delta);
+          const after = levelFromXp(totalXp).level;
+          updated = {
+            ...u,
+            totalXp,
+            level: after,
+            dailyBonusDate: desiredBonus > 0 ? today : undefined,
+            dailyBonusXp: desiredBonus > 0 ? desiredBonus : undefined,
+            updatedAt: Date.now(),
+          };
+          response = {
+            delta,
+            desiredBonus,
+            earned,
+            cap,
+            leveledUp: after > before,
+            newLevel: after,
+          };
+          return { user: updated };
+        });
+
+        if (updated) queueProfileSync(updated);
+        resolve(response);
+      }, 500);
+    });
   },
 }));

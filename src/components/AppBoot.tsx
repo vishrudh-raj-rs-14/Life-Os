@@ -6,6 +6,7 @@ import { startScheduler } from "@/lib/notifications/scheduler";
 import { startSyncLoop } from "@/lib/social/sync";
 import { db } from "@/lib/db/dexie";
 import { getRepo } from "@/lib/repo";
+import { startAuthCache } from "@/lib/auth";
 
 const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
@@ -69,6 +70,7 @@ export function AppBoot() {
         })
         .catch(() => {/* noop */});
     }
+    startAuthCache();
     startSyncLoop();
 
     return () => {
@@ -92,32 +94,23 @@ export function AppBoot() {
     bootstrappedUserId.current = user.userId;
     void (async () => {
       try {
+        const d = db();
+        const [localHabits, localLogs, localSessions, localReminders] = await Promise.all([
+          d.habits.where("userId").equals(user.userId).count(),
+          d.logs.where("userId").equals(user.userId).count(),
+          d.sessions.where("userId").equals(user.userId).count(),
+          d.reminders.where("userId").equals(user.userId).count(),
+        ]);
+
+        if (localHabits + localLogs + localSessions + localReminders > 0) return;
+
         const repo = await getRepo();
-        const [habits, logs, sessions, reminders] = await Promise.all([
+        await Promise.all([
           repo.listHabits({ includeArchived: true }),
           repo.listLogs(),
           repo.listSessions(),
           repo.listReminders(),
         ]);
-        const d = db();
-        // Merge strategy: do NOT overwrite newer local rows.
-        // Otherwise the UI can flip-flop (optimistic update -> bootstrap overwrites -> later re-sync).
-        for (const h of habits) {
-          const local = await d.habits.get(h.id);
-          if (!local || (local.updatedAt ?? 0) <= (h.updatedAt ?? 0)) await d.habits.put(h);
-        }
-        for (const l of logs) {
-          const local = await d.logs.get(l.id);
-          if (!local || (local.updatedAt ?? 0) <= (l.updatedAt ?? 0)) await d.logs.put(l);
-        }
-        for (const s of sessions) {
-          const local = await d.sessions.get(s.id);
-          if (!local || (local.updatedAt ?? 0) <= (s.updatedAt ?? 0)) await d.sessions.put(s);
-        }
-        for (const r of reminders) {
-          const local = await d.reminders.get(r.id);
-          if (!local || (local.updatedAt ?? 0) <= (r.updatedAt ?? 0)) await d.reminders.put(r);
-        }
       } catch {
         bootstrappedUserId.current = null;
         /* offline / supabase unavailable */

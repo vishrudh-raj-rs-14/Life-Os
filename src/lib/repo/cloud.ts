@@ -5,6 +5,8 @@ import type { Repository } from "./index";
 import { DexieRepository } from "./dexie";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { db } from "@/lib/db/dexie";
+import { ensureAuthUser, getCachedAuthUser } from "@/lib/auth";
+import { enqueueWrite } from "@/lib/sync/writeQueue";
 
 // Cloud-first for core tables (user, habits, logs, sessions, reminders).
 // Dexie remains the offline cache fallback.
@@ -17,6 +19,10 @@ function isRemoteNewer<T extends { updatedAt?: number }>(remote: T, local?: T) {
 
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function throwIfError(result: { error: unknown }) {
+  if (result.error) throw result.error;
 }
 
 function mapUserFromRow(r: any): UserProfile {
@@ -46,6 +52,7 @@ function mapUserToRow(u: UserProfile, authUserId: string) {
     handle: u.handle,
     display_name: u.displayName,
     class_name: u.className,
+    level: u.level,
     tone: u.tone,
     total_xp: u.totalXp,
     streak_days: u.streakDays,
@@ -122,7 +129,7 @@ function mapLogFromRow(r: any): Log {
     value: r.value,
     steps: r.steps ?? undefined,
     notes: r.notes ?? undefined,
-    xpAwarded: r.xp_awarded ?? undefined,
+    xpAwarded: r.xp_awarded ?? 0,
     createdAt: r.created_at ?? Date.now(),
     updatedAt: r.updated_at ?? Date.now(),
     deletedAt: r.deleted_at ?? undefined,
@@ -139,7 +146,7 @@ function mapLogToRow(l: Log) {
     value: l.value ?? 1,
     steps: l.steps ?? null,
     notes: l.notes ?? null,
-    xp_awarded: l.xpAwarded ?? null,
+    xp_awarded: l.xpAwarded ?? 0,
     created_at: l.createdAt,
     updated_at: l.updatedAt,
     deleted_at: l.deletedAt ?? null,
@@ -166,9 +173,7 @@ function mapSessionToRow(s: Session) {
   return {
     id: s.id,
     user_id: s.userId,
-    // Supabase schema still has sessions.goal_id -> goals.id (legacy).
-    // Our app's focus sessions are attached to habits (goals==habits), so avoid FK violations.
-    goal_id: null,
+    goal_id: s.goalId ?? null,
     minutes: s.minutes,
     started_at: s.startedAt,
     ended_at: s.endedAt,
@@ -190,6 +195,7 @@ function mapReminderFromRow(r: any): Reminder {
     enabled: r.enabled,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    deletedAt: r.deleted_at ?? undefined,
   } as Reminder;
 }
 
@@ -203,18 +209,28 @@ function mapReminderToRow(r: Reminder) {
     enabled: r.enabled,
     created_at: r.createdAt,
     updated_at: r.updatedAt,
+    deleted_at: r.deletedAt ?? null,
   };
 }
 
 export class CloudRepository implements Repository {
   private local = new DexieRepository();
 
+  private async authUserId() {
+    return getCachedAuthUser()?.id ?? (await ensureAuthUser())?.id;
+  }
+
+  private async currentUserId() {
+    const authUserId = await this.authUserId();
+    if (authUserId) return authUserId;
+    return (await this.local.getUser())?.userId;
+  }
+
   async getUser(): Promise<UserProfile | undefined> {
     const sb = supabaseBrowser();
     if (!sb) return this.local.getUser();
 
-    const { data: auth } = await sb.auth.getUser();
-    const authUserId = auth.user?.id;
+    const authUserId = await this.authUserId();
     if (!authUserId) return undefined;
 
     const { data, error } = await sb
@@ -231,28 +247,20 @@ export class CloudRepository implements Repository {
 
   async upsertUser(user: UserProfile): Promise<void> {
     const sb = supabaseBrowser();
+    await this.local.upsertUser(user);
     if (sb && isUuid(user.userId)) {
       const authUserId = user.userId;
+      await enqueueWrite(async () => {
         const { data: existing } = await sb
           .from("user_profile")
           .select("*")
           .eq("auth_user_id", authUserId)
           .maybeSingle();
 
-        // Do not let stale local state overwrite newer cloud rows, but allow
-        // intentional newer updates to decrease XP (undo/reset/daily bonus removal).
-        if (existing?.updated_at && existing.updated_at > (user.updatedAt ?? 0)) {
-          const fresh = mapUserFromRow(existing);
-          await this.local.upsertUser(fresh);
-          return;
-        }
-
         const safe: UserProfile = { ...user, createdAt: existing?.created_at ?? user.createdAt };
-
         await sb.from("user_profile").upsert(mapUserToRow(safe, authUserId));
-        user = safe;
+      });
     }
-    await this.local.upsertUser(user);
   }
 
   // goals still local-only for now
@@ -264,12 +272,12 @@ export class CloudRepository implements Repository {
   async listHabits(opts?: { goalId?: string; includeArchived?: boolean }): Promise<Habit[]> {
     const sb = supabaseBrowser();
     if (!sb) return this.local.listHabits(opts);
-    const u = await this.getUser();
-    if (!u) return [];
+    const userId = await this.currentUserId();
+    if (!userId) return [];
 
     const { data, error } = await sb.from("habits").select("*");
     if (!error && Array.isArray(data)) {
-      const habits = data.map(mapHabitFromRow).filter((h) => h.userId === u.userId);
+      const habits = data.map(mapHabitFromRow).filter((h) => h.userId === userId);
       for (const h of habits) {
         const local = await db().habits.get(h.id);
         if (isRemoteNewer(h, local)) await db().habits.put(h);
@@ -295,21 +303,21 @@ export class CloudRepository implements Repository {
 
   async upsertHabit(habit: Habit): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) await sb.from("habits").upsert(mapHabitToRow(habit));
     await this.local.upsertHabit(habit);
+    if (sb) await enqueueWrite(() => sb.from("habits").upsert(mapHabitToRow(habit)).then(throwIfError));
   }
 
   async deleteHabit(id: string): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) await sb.from("habits").delete().eq("id", id);
     await this.local.deleteHabit(id);
+    if (sb) await enqueueWrite(() => sb.from("habits").delete().eq("id", id).then(throwIfError));
   }
 
   async listLogs(opts?: { from?: string; to?: string; habitId?: string }): Promise<Log[]> {
     const sb = supabaseBrowser();
     if (!sb) return this.local.listLogs(opts);
-    const u = await this.getUser();
-    if (!u) return [];
+    const userId = await this.currentUserId();
+    if (!userId) return [];
 
     let q: any = sb.from("logs").select("*");
     if (opts?.from) q = q.gte("date", opts.from);
@@ -317,7 +325,7 @@ export class CloudRepository implements Repository {
     if (opts?.habitId) q = q.eq("habit_id", opts.habitId);
     const { data, error } = await q;
     if (!error && Array.isArray(data)) {
-      const logs = data.map(mapLogFromRow).filter((l) => l.userId === u.userId);
+      const logs = data.map(mapLogFromRow).filter((l) => l.userId === userId);
       for (const l of logs) {
         const local = await db().logs.get(l.id);
         if (isRemoteNewer(l, local)) await db().logs.put(l);
@@ -329,34 +337,38 @@ export class CloudRepository implements Repository {
 
   async upsertLog(log: Log): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) {
-      // Ensure the referenced habit exists in cloud first (Supabase FK: logs.habit_id -> habits.id).
-      // If the habit was just created locally, log upsert can race and fail.
-      const { data: existingHabit } = await sb
-        .from("habits")
-        .select("id")
-        .eq("id", log.habitId)
-        .maybeSingle();
-      if (!existingHabit) {
-        const h = await this.local.getHabit(log.habitId);
-        if (h) await sb.from("habits").upsert(mapHabitToRow(h));
-      }
-      await sb.from("logs").upsert(mapLogToRow(log));
-    }
     await this.local.upsertLog(log);
+    if (sb) {
+      await enqueueWrite(async () => {
+        const { data: existingHabit } = await sb
+          .from("habits")
+          .select("id")
+          .eq("id", log.habitId)
+          .maybeSingle();
+        if (!existingHabit) {
+          const h = await this.local.getHabit(log.habitId);
+          if (h) {
+            const { error } = await sb.from("habits").upsert(mapHabitToRow(h));
+            if (error) throw error;
+          }
+        }
+        const { error } = await sb.from("logs").upsert(mapLogToRow(log));
+        if (error) throw error;
+      });
+    }
   }
 
   async deleteLog(id: string): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) await sb.from("logs").delete().eq("id", id);
     await this.local.deleteLog(id);
+    if (sb) await enqueueWrite(() => sb.from("logs").delete().eq("id", id).then(throwIfError));
   }
 
   async listSessions(opts?: { goalId?: string; from?: number; to?: number }): Promise<Session[]> {
     const sb = supabaseBrowser();
     if (!sb) return this.local.listSessions(opts);
-    const u = await this.getUser();
-    if (!u) return [];
+    const userId = await this.currentUserId();
+    if (!userId) return [];
 
     let q: any = sb.from("sessions").select("*");
     if (opts?.goalId) q = q.eq("goal_id", opts.goalId);
@@ -364,7 +376,7 @@ export class CloudRepository implements Repository {
     if (opts?.to) q = q.lt("started_at", opts.to);
     const { data, error } = await q;
     if (!error && Array.isArray(data)) {
-      const sessions = data.map(mapSessionFromRow).filter((s) => s.userId === u.userId);
+      const sessions = data.map(mapSessionFromRow).filter((s) => s.userId === userId);
       for (const s of sessions) {
         const local = await db().sessions.get(s.id);
         if (isRemoteNewer(s, local)) await db().sessions.put(s);
@@ -376,14 +388,14 @@ export class CloudRepository implements Repository {
 
   async upsertSession(s: Session): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) await sb.from("sessions").upsert(mapSessionToRow(s));
     await this.local.upsertSession(s);
+    if (sb) await enqueueWrite(() => sb.from("sessions").upsert(mapSessionToRow(s)).then(throwIfError));
   }
 
   async deleteSession(id: string): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) await sb.from("sessions").delete().eq("id", id);
     await this.local.deleteSession(id);
+    if (sb) await enqueueWrite(() => sb.from("sessions").delete().eq("id", id).then(throwIfError));
   }
 
   async listAchievements() { return this.local.listAchievements(); }
@@ -392,11 +404,11 @@ export class CloudRepository implements Repository {
   async listReminders(): Promise<Reminder[]> {
     const sb = supabaseBrowser();
     if (!sb) return this.local.listReminders();
-    const u = await this.getUser();
-    if (!u) return [];
+    const userId = await this.currentUserId();
+    if (!userId) return [];
     const { data, error } = await sb.from("reminders").select("*");
     if (!error && Array.isArray(data)) {
-      const rems = data.map(mapReminderFromRow).filter((r) => r.userId === u.userId);
+      const rems = data.map(mapReminderFromRow).filter((r) => r.userId === userId);
       for (const r of rems) {
         const local = await db().reminders.get(r.id);
         if (isRemoteNewer(r, local)) await db().reminders.put(r);
@@ -408,14 +420,14 @@ export class CloudRepository implements Repository {
 
   async upsertReminder(r: Reminder): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) await sb.from("reminders").upsert(mapReminderToRow(r));
     await this.local.upsertReminder(r);
+    if (sb) await enqueueWrite(() => sb.from("reminders").upsert(mapReminderToRow(r)).then(throwIfError));
   }
 
   async deleteReminder(id: string): Promise<void> {
     const sb = supabaseBrowser();
-    if (sb) await sb.from("reminders").delete().eq("id", id);
     await this.local.deleteReminder(id);
+    if (sb) await enqueueWrite(() => sb.from("reminders").delete().eq("id", id).then(throwIfError));
   }
 
   // passthrough for remaining methods (still local-only)

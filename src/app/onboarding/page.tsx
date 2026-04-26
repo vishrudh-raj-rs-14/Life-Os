@@ -10,6 +10,7 @@ import { useUser } from "@/store/useUser";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Tone } from "@/types";
+import { ensureAuthUser } from "@/lib/auth";
 
 const TONES: { value: Tone; label: string; hint: string; sample: string }[] = [
   {
@@ -52,14 +53,12 @@ export default function OnboardingPage() {
 
   // Pre-fill name/handle from Google profile if available
   useEffect(() => {
-    const sb = supabaseBrowser();
-    if (!sb) return;
-    sb.auth.getUser().then(({ data }: { data: { user: { user_metadata?: Record<string, string> } | null } }) => {
-      if (!data.user) return;
-      const fullName = data.user.user_metadata?.full_name as string | undefined;
+    ensureAuthUser().then((authUser) => {
+      if (!authUser) return;
+      const fullName = authUser.metadata?.full_name as string | undefined;
       if (fullName && !name) setName(fullName);
       if (!handle) {
-        const suggested = (data.user.user_metadata?.name as string | undefined)
+        const suggested = (authUser.metadata?.name as string | undefined)
           ?.toLowerCase().replace(/\s+/g, "") ?? "";
         if (suggested) setHandle(suggested);
       }
@@ -75,9 +74,9 @@ export default function OnboardingPage() {
       // Ensure the cloud profile exists and is bound to this auth user.
       // We use auth.uid() (uuid) as the stable user_profile.id across devices.
       const sb = supabaseBrowser();
+      const authUser = await ensureAuthUser();
       if (sb) {
-        const { data } = await sb.auth.getUser();
-        const authUid = data.user?.id;
+        const authUid = authUser?.id;
         if (authUid) {
           const { error: upsertErr } = await sb.from("user_profile").upsert({
             id: authUid,
@@ -102,13 +101,9 @@ export default function OnboardingPage() {
         selectedGoalKeys: [],
       });
       // Seed personal goals for Vishrudh's account/handle.
-      let googleEmail = "";
-      if (sb) {
-        const { data } = await sb.auth.getUser();
-        googleEmail = data.user?.email ?? "";
-      }
+      const googleEmail = authUser?.email ?? "";
       if (shouldSeedVishrudhProfile(googleEmail, h)) {
-        await seedVishrudh();
+        await seedVishrudh(authUser?.id);
       }
       await useUser.getState().load();
       router.replace("/");
